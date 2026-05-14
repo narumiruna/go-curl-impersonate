@@ -54,28 +54,27 @@ ensure_gyp_next() {
   gyp_prefix=${GYP_NEXT_PREFIX:-"${RUNNER_TEMP:-${TMPDIR:-/tmp}}/go-curl-impersonate-gyp-next"}
   mkdir -p "$gyp_prefix"
 
-  if [ -d "$gyp_prefix/lib" ]; then
-    site_packages=$(find "$gyp_prefix/lib" -type d -path '*/site-packages' -print -quit 2>/dev/null || true)
+  activate_gyp_prefix() {
+    PATH="$gyp_prefix/bin:$gyp_prefix/local/bin:$PATH"
+    export PATH
+    site_packages=$(
+      find "$gyp_prefix" -type d \( -path '*/site-packages' -o -path '*/dist-packages' \) -print -quit 2>/dev/null || true
+    )
     if [ -n "$site_packages" ]; then
-      PATH="$gyp_prefix/bin:$PATH"
       PYTHONPATH="$site_packages${PYTHONPATH:+:$PYTHONPATH}"
-      export PATH PYTHONPATH
-      if command -v gyp >/dev/null 2>&1 && gyp --help >/dev/null 2>&1; then
-        return 0
-      fi
+      export PYTHONPATH
     fi
+  }
+
+  activate_gyp_prefix
+  if command -v gyp >/dev/null 2>&1 && gyp --help >/dev/null 2>&1; then
+    return 0
   fi
 
   if ! "$python3_cmd" -m pip install --ignore-installed --prefix "$gyp_prefix" gyp-next; then
     "$python3_cmd" -m pip install --break-system-packages --ignore-installed --prefix "$gyp_prefix" gyp-next
   fi
-  PATH="$gyp_prefix/bin:$PATH"
-  export PATH
-  site_packages=$(find "$gyp_prefix/lib" -type d -path '*/site-packages' -print -quit 2>/dev/null || true)
-  if [ -n "$site_packages" ]; then
-    PYTHONPATH="$site_packages${PYTHONPATH:+:$PYTHONPATH}"
-    export PYTHONPATH
-  fi
+  activate_gyp_prefix
   if ! command -v gyp >/dev/null 2>&1 || ! gyp --help >/dev/null 2>&1; then
     echo "gyp-next was installed but gyp is not executable" >&2
     exit 1
