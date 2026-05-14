@@ -20,7 +20,7 @@ import yaml
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-UPSTREAM_TESTS = ROOT / ".refs" / "curl-impersonate" / "tests"
+UPSTREAM_TESTS = ROOT / "third_party" / "curl-impersonate" / "tests"
 SIGNATURES = UPSTREAM_TESTS / "signatures"
 SSL = UPSTREAM_TESTS / "ssl"
 

@@ -8,9 +8,9 @@ public fingerprint endpoints for the main check.
 
 Reuse the upstream curl-impersonate test approach from:
 
-- `.refs/curl-impersonate/tests/signatures/*.yaml`
-- `.refs/curl-impersonate/tests/test_impersonate.py`
-- `.refs/curl-impersonate/tests/README.md`
+- `third_party/curl-impersonate/tests/signatures/*.yaml`
+- `third_party/curl-impersonate/tests/test_impersonate.py`
+- `third_party/curl-impersonate/tests/README.md`
 
 Verify the checked-in reference fixtures are present with:
 
@@ -18,13 +18,13 @@ Verify the checked-in reference fixtures are present with:
 sh ./scripts/check-fingerprint-fixtures.sh
 ```
 
-The reference clone lives under ignored `.refs/`, so this check skips in a
-plain CI checkout where the reference clone is not present.
+The reference source lives in the `third_party/curl-impersonate` submodule, so
+this check skips in a plain CI checkout where the submodule is not initialized.
 
 The first release must cover at least:
 
-- `.refs/curl-impersonate/tests/signatures/chrome.yaml`
-- `.refs/curl-impersonate/tests/signatures/firefox.yaml`
+- `third_party/curl-impersonate/tests/signatures/chrome.yaml`
+- `third_party/curl-impersonate/tests/signatures/firefox.yaml`
 
 The local verifier avoids flaky public endpoints:
 

@@ -7,7 +7,7 @@ This document defines the first release API surface for `go-curl-impersonate`.
 | Area | Status | Evidence |
 | --- | --- | --- |
 | Client construction | Implemented | `client.NewClient` |
-| Browser profile aliases | Implemented | `impersonate.Resolve`, `client.WithProfileName`, `.refs/curl-impersonate/browsers.json` parity test |
+| Browser profile aliases | Implemented | `impersonate.Resolve`, `client.WithProfileName`, `third_party/curl-impersonate/browsers.json` parity test |
 | GET/POST method passing | Request translation implemented, native pending | `internal/curl.NewRequestSpec` snapshots method |
 | Request headers | Request translation implemented, native pending | `internal/curl.NewRequestSpec` snapshots headers; `RequestSpec.HeaderLines` emits deterministic curl slist lines |
 | Request body | Request translation implemented, native pending | `internal/curl.NewRequestSpec` snapshots body and restores `req.Body` |
@@ -60,7 +60,7 @@ It must not use one easy handle concurrently.
 ## Profile Scope
 
 The native target source of truth for the current repo snapshot is
-`.refs/curl-impersonate/browsers.json`. The first profile aliases are:
+`third_party/curl-impersonate/browsers.json`. The first profile aliases are:
 
 | Alias | Target | Backend family |
 | --- | --- | --- |

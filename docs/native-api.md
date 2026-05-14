@@ -17,7 +17,7 @@ win over profile defaults.
 
 ## Backend Families
 
-The checked-in `.refs/curl-impersonate/browsers.json` maps browser targets to
+The checked-in `third_party/curl-impersonate/browsers.json` maps browser targets to
 two backend families:
 
 - `curl-impersonate-chrome`: Chrome, Edge, Safari, and Chrome Android targets.

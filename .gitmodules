@@ -1,0 +1,4 @@
+[submodule "third_party/curl-impersonate"]
+	path = third_party/curl-impersonate
+	url = https://github.com/lwthiker/curl-impersonate
+	ignore = untracked

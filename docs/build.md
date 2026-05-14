@@ -18,6 +18,13 @@ return `curl.ErrNativeUnavailable`.
 
 The first native target is Linux amd64 with cgo and `curl-impersonate`.
 
+## Reference Source Layout
+
+`third_party/curl-impersonate` is a pinned upstream submodule used by
+contributors and GitHub Actions to build native artifacts and read fingerprint
+fixtures. `references/curl_cffi` is an optional ignored local-only reference for
+Python `curl_cffi` API and behavior comparison; it is not required by CI.
+
 The integration build still needs one finalized linking strategy. Acceptable
 strategies are:
 
@@ -106,7 +113,7 @@ go test -tags="integration native" ./...
 A local Chrome and Firefox backend has been verified with:
 
 ```sh
-cd .refs/curl-impersonate/build
+cd third_party/curl-impersonate/build
 ../configure --prefix=/tmp/curl-impersonate-local
 make chrome-build
 make chrome-install

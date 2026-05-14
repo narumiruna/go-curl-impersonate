@@ -137,6 +137,6 @@ handle per request for the full perform/reset/cleanup cycle.
 
 ## References
 
-- `.refs/curl-impersonate`: upstream curl-impersonate reference clone.
-- `.refs/curl_cffi`: Python curl_cffi reference clone.
+- `third_party/curl-impersonate`: pinned upstream curl-impersonate submodule.
+- `references/curl_cffi`: optional local-only Python curl_cffi reference clone.
 - `docs/plans/2026-05-14_go-curl-cffi-plan.md`: implementation plan.
