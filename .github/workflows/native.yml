@@ -24,6 +24,9 @@ on:
       - "docs/native-distribution.md"
       - "docs/quickstart.md"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   native-linux-amd64:
     runs-on: ubuntu-latest
