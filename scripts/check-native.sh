@@ -1,6 +1,27 @@
 #!/usr/bin/env sh
 set -eu
 
+if [ "$#" -gt 1 ]; then
+  echo "usage: sh ./scripts/check-native.sh [PREFIX]" >&2
+  exit 2
+fi
+
+if [ "$#" -eq 1 ]; then
+  PREFIX=$1
+  export PREFIX
+fi
+
+if [ -n "${PREFIX:-}" ]; then
+  PREFIX=$(cd "$PREFIX" && pwd)
+  if [ ! -d "$PREFIX/lib/pkgconfig" ]; then
+    echo "missing pkg-config directory under PREFIX: $PREFIX/lib/pkgconfig" >&2
+    exit 1
+  fi
+  PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+  LD_LIBRARY_PATH="$PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  export PKG_CONFIG_PATH LD_LIBRARY_PATH
+fi
+
 packages="libcurl-impersonate libcurl-impersonate-chrome libcurl-impersonate-ff"
 
 validate_flags() {
@@ -77,8 +98,12 @@ EOF
   trap - EXIT HUP INT TERM
 }
 
-if ! command -v pkg-config >/dev/null 2>&1; then
+pkg_config_available=0
+if command -v pkg-config >/dev/null 2>&1; then
+  pkg_config_available=1
+elif [ -z "${CGO_CFLAGS:-}" ] || [ -z "${CGO_LDFLAGS:-}" ]; then
   echo "missing pkg-config" >&2
+  echo "install pkg-config, pass PREFIX, or set both CGO_CFLAGS and CGO_LDFLAGS explicitly" >&2
   exit 1
 fi
 
@@ -89,33 +114,35 @@ chrome_cflags=""
 chrome_libs=""
 firefox_cflags=""
 firefox_libs=""
-for package in $packages; do
-  if pkg-config --exists "$package"; then
-    found=1
-    echo "found pkg-config package: $package"
-    cflags=$(pkg-config --cflags "$package")
-    libs=$(pkg-config --libs "$package")
-    echo "$cflags $libs"
-    validate_flags "$package" "$cflags" "$libs"
-    validate_symbol "$package" "$cflags" "$libs"
-    case "$package" in
-      libcurl-impersonate)
-        generic_cflags=$cflags
-        generic_libs=$libs
-        ;;
-      libcurl-impersonate-chrome)
-        chrome_cflags=$cflags
-        chrome_libs=$libs
-        ;;
-      libcurl-impersonate-ff)
-        firefox_cflags=$cflags
-        firefox_libs=$libs
-        ;;
-    esac
-  else
-    echo "missing pkg-config package: $package" >&2
-  fi
-done
+if [ "$pkg_config_available" -eq 1 ]; then
+  for package in $packages; do
+    if pkg-config --exists "$package"; then
+      found=1
+      echo "found pkg-config package: $package"
+      cflags=$(pkg-config --cflags "$package")
+      libs=$(pkg-config --libs "$package")
+      echo "$cflags $libs"
+      validate_flags "$package" "$cflags" "$libs"
+      validate_symbol "$package" "$cflags" "$libs"
+      case "$package" in
+        libcurl-impersonate)
+          generic_cflags=$cflags
+          generic_libs=$libs
+          ;;
+        libcurl-impersonate-chrome)
+          chrome_cflags=$cflags
+          chrome_libs=$libs
+          ;;
+        libcurl-impersonate-ff)
+          firefox_cflags=$cflags
+          firefox_libs=$libs
+          ;;
+      esac
+    else
+      echo "missing pkg-config package: $package" >&2
+    fi
+  done
+fi
 
 if [ "$found" -eq 0 ]; then
   if [ -z "${CGO_CFLAGS:-}" ] || [ -z "${CGO_LDFLAGS:-}" ]; then

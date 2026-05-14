@@ -6,7 +6,7 @@ This repository is in early implementation. The checked-in Go module currently
 contains the public package skeleton, profile resolution, client option model,
 native cgo backend, local integration tests, and documentation for the native
 dependency work. Full release readiness is still tracked in
-`docs/plans/2026-05-14_go-curl-cffi-plan.md`.
+`docs/plans/2026-05-15_github-actions-library-distribution-plan.md`.
 
 ## Goal
 
@@ -30,6 +30,11 @@ The first release target is Linux amd64 with cgo and a native
 - The native backend has local Chrome/Firefox request tests. Chrome TLS and
   HTTP/2 fingerprints match upstream fixtures; Firefox TLS and HTTP/2
   fingerprints match upstream fixtures.
+- `third_party/curl-impersonate` is a contributor/CI submodule. It is not a
+  consumer installation mechanism for `go get` or `go install`.
+- Linux amd64 native bundle packaging is documented and wired into native CI;
+  the first consumer path still requires unpacking that bundle or providing a
+  compatible system/pkg-config installation.
 
 ## Packages
 
@@ -85,7 +90,7 @@ a network request until the native curl-impersonate backend is enabled.
 Ubuntu prerequisites for building or checking native artifacts:
 
 ```sh
-sudo apt install build-essential pkg-config cmake ninja-build curl autoconf automake libtool python3-pip python3-yaml libnss3 nss-plugin-pem ca-certificates zlib1g-dev unzip nghttp2-server
+sudo apt install build-essential pkg-config cmake ninja-build curl autoconf automake autotools-dev libtool python3-pip python3-yaml libnss3 nss-plugin-pem ca-certificates zlib1g-dev bzip2 xz-utils unzip mercurial nghttp2-server
 ```
 
 These packages provide the compiler/tooling and runtime dependencies. They do
@@ -110,8 +115,13 @@ sh ./scripts/smoke-atp.sh
 ```
 
 For local prefix builds, run the native scripts with
-`PKG_CONFIG_PATH=/tmp/curl-impersonate-local/lib/pkgconfig` and
-`LD_LIBRARY_PATH=/tmp/curl-impersonate-local/lib`.
+`sh ./scripts/build-curl-impersonate.sh /tmp/curl-impersonate-local`, then pass
+that prefix to the native checks:
+
+```sh
+sh ./scripts/check-native.sh /tmp/curl-impersonate-local
+sh ./scripts/smoke-external-module.sh /tmp/curl-impersonate-local
+```
 
 `go test -tags=integration ./...` keeps using the no-native placeholder.
 `sh ./scripts/check-native.sh` validates native artifacts and then runs the
@@ -121,6 +131,8 @@ Native dependency and integration-test details are tracked in:
 
 - `docs/build.md`
 - `docs/native-api.md`
+- `docs/native-distribution.md`
+- `docs/quickstart.md`
 - `docs/fingerprint-verification.md`
 - `docs/api-scope.md`
 

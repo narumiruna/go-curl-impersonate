@@ -19,7 +19,7 @@ if [ ! -d "$prefix/lib" ]; then
   exit 1
 fi
 
-if ! find "$prefix/lib" -maxdepth 1 -type f \( -name 'libcurl-impersonate*.so*' -o -name 'libcurl-impersonate*.a' \) | grep -q .; then
+if ! find "$prefix/lib" -maxdepth 1 \( -type f -o -type l \) \( -name 'libcurl-impersonate*.so*' -o -name 'libcurl-impersonate*.a' \) | grep -q .; then
   echo "missing libcurl-impersonate library under: $prefix/lib" >&2
   exit 1
 fi
@@ -31,7 +31,7 @@ write_pc() {
   lib=$2
   description=$3
   cat >"$out_dir/$name.pc" <<EOF
-prefix=$prefix
+prefix=\${pcfiledir}/../..
 exec_prefix=\${prefix}
 libdir=\${exec_prefix}/lib
 includedir=\${prefix}/include
@@ -44,8 +44,28 @@ Libs: -L\${libdir} -l$lib
 EOF
 }
 
-write_pc "libcurl-impersonate" "curl-impersonate" "curl-impersonate generic libcurl"
-write_pc "libcurl-impersonate-chrome" "curl-impersonate-chrome" "curl-impersonate Chrome backend"
-write_pc "libcurl-impersonate-ff" "curl-impersonate-ff" "curl-impersonate Firefox backend"
+has_lib() {
+  lib=$1
+  find "$prefix/lib" -maxdepth 1 \( -type f -o -type l \) \( -name "lib$lib.so" -o -name "lib$lib.so.*" -o -name "lib$lib.a" \) | grep -q .
+}
+
+wrote=0
+if has_lib "curl-impersonate"; then
+  write_pc "libcurl-impersonate" "curl-impersonate" "curl-impersonate generic libcurl"
+  wrote=1
+fi
+if has_lib "curl-impersonate-chrome"; then
+  write_pc "libcurl-impersonate-chrome" "curl-impersonate-chrome" "curl-impersonate Chrome backend"
+  wrote=1
+fi
+if has_lib "curl-impersonate-ff"; then
+  write_pc "libcurl-impersonate-ff" "curl-impersonate-ff" "curl-impersonate Firefox backend"
+  wrote=1
+fi
+
+if [ "$wrote" -eq 0 ]; then
+  echo "missing supported libcurl-impersonate library names under: $prefix/lib" >&2
+  exit 1
+fi
 
 echo "$out_dir"

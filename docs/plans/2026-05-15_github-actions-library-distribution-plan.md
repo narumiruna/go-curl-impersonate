@@ -106,13 +106,16 @@ hook 來 build 或安裝 native libraries。因此 submodule 是 contributor/CI 
 - [x] 保留 `references/curl_cffi` 為 ignored local reference，除非後續 CI 真的需要它；
   verified by documenting this decision in `docs/build.md` and confirming
   `git ls-files references/curl_cffi` is empty.
-- [ ] 把目前文件中的 native build commands 收斂成
+- [x] 把目前文件中的 native build commands 收斂成
   `scripts/build-curl-impersonate.sh <prefix>`，輸出 headers、Chrome/Firefox
-  libraries、pkg-config files 到指定 prefix；verify with
-  `PREFIX=/tmp/curl-impersonate-local sh ./scripts/build-curl-impersonate.sh "$PREFIX"`.
-- [ ] 更新 `scripts/check-native.sh` 讓它可以直接接受 `PREFIX` 或
+  libraries、pkg-config files 到指定 prefix；verified with a full Chrome/Firefox
+  helper build into `/tmp/go-curl-impersonate-prefix-full.JGjCMY`, followed by
+  `scripts/check-native.sh`, bundle packaging, external consumer smoke,
+  runtime-loader prototype, and Chrome/Firefox fingerprint checks.
+- [x] 更新 `scripts/check-native.sh` 讓它可以直接接受 `PREFIX` 或
   `PKG_CONFIG_PATH`，並維持目前 artifact/header/symbol/native Go tests 的檢查；
-  verify with clean `env -i ... sh ./scripts/check-native.sh`.
+  verified with clean `env -i ... sh ./scripts/check-native.sh` against an
+  unpacked Linux amd64 native bundle.
 - [ ] 新增 `.github/workflows/native.yml`，在 `workflow_dispatch`、tag push，或
   `main` path changes 時 checkout submodules、install apt deps、build native
   artifacts、run `scripts/check-native.sh`、run Chrome/Firefox
@@ -121,35 +124,39 @@ hook 來 build 或安裝 native libraries。因此 submodule 是 contributor/CI 
 - [ ] 保持 `.github/workflows/test.yml` 為 no-native fast path，plain checkout 不需要
   submodule；verify with `go test ./...`, `go test -tags=integration ./...`,
   `go test -race ./...`, and successful default workflow on GitHub.
-- [ ] 寫一份 consumer distribution decision record 到 `docs/native-distribution.md`，
+- [x] 寫一份 consumer distribution decision record 到 `docs/native-distribution.md`，
   比較 release bundle、platform-specific Go artifact module、runtime loader /
-  embedded bundle、system pkg-config 四種方案；verify with a recommendation for
-  Phase 1 and explicit follow-up criteria for `curl_cffi`-like zero-setup usage.
+  embedded bundle、system pkg-config 四種方案；verified with a Phase 1 release
+  bundle recommendation, explicit submodule caveat, and follow-up criteria for
+  `curl_cffi`-like zero-setup usage.
 - [ ] 新增 release workflow 或 release job，從 native prefix 打包
   `go-curl-impersonate-native-linux-amd64.tar.gz`，內容至少包含 `lib/`,
   `include/`, `lib/pkgconfig/`, `VERSION`, `SHA256SUMS`，可選 `bin/`
   diagnostic CLI；verify by unpacking the artifact in a clean temp dir and running
   `PKG_CONFIG_PATH=<unpack>/lib/pkgconfig LD_LIBRARY_PATH=<unpack>/lib sh ./scripts/check-native.sh`.
-- [ ] 補 `docs/quickstart.md` 或 README quickstart，明確分成 library path 與 CLI
+- [x] 補 `docs/quickstart.md` 或 README quickstart，明確分成 library path 與 CLI
   path：library path 使用 `go get`, import `client`, download native bundle,
   set env, run with `-tags="integration native"`；CLI path 使用 release binary or
-  `go install` with native deps；verify docs examples by executing them from a
-  temporary external module.
+  `go install` with native deps；verified by executing the external consumer
+  smoke script from a temporary module against an unpacked bundle.
 - [ ] 新增外部 consumer smoke script，例如 `scripts/smoke-external-module.sh`，
   建一個 temp Go module、`go get github.com/narumiruna/go-curl-impersonate`,
   寫入最小 `client.NewClient` example，使用 release/native prefix 送出 local
   httptest 或 ATP smoke request；verify with the script passing locally and in
   native GitHub Actions.
-- [ ] Prototype one `curl_cffi`-like consumer path beyond manual env setup:
-  either a platform-specific artifact module or runtime loader experiment; verify
-  by running an external temp module with only `go get` plus documented minimal
-  setup for Linux amd64.
-- [ ] 更新 README status wording，避免暗示 `go install` 會自動帶 native libraries；
-  verify README clearly says `go get` is for library source, native bundle/pkg-config
-  is required for `integration native` builds, and release binary is optional tooling.
-- [ ] 若 native workflow duration 太長，將 native CI 設為 manual/tag-only，並在
-  default CI 保留 reference fixture skip behavior；verify by recording the chosen
-  trigger policy in `docs/build.md`.
+- [x] Prototype one `curl_cffi`-like consumer path beyond manual env setup:
+  runtime loader experiment; verified by `scripts/prototype-runtime-loader.sh`
+  creating a temporary external module, unsetting `CGO_CFLAGS`,
+  `CGO_LDFLAGS`, and `LD_LIBRARY_PATH`, then `dlopen`ing the native bundle and
+  calling `curl_easy_impersonate`.
+- [x] 更新 README status wording，避免暗示 `go install` 會自動帶 native libraries；
+  verified README clearly says `go get` is for library source, native
+  bundle/pkg-config is required for `integration native` builds, and release
+  binary is optional tooling.
+- [x] 若 native workflow duration 太長，將 native CI 設為 manual/tag-only，並在
+  default CI 保留 reference fixture skip behavior；verified by recording the
+  chosen native trigger policy in `docs/build.md`: `workflow_dispatch`, tag
+  pushes, and `main` path changes only.
 
 ## Risks
 
@@ -188,11 +195,11 @@ hook 來 build 或安裝 native libraries。因此 submodule 是 contributor/CI 
 - [ ] A release artifact for Linux amd64 can be unpacked into a clean directory
   and used by `PKG_CONFIG_PATH` / `LD_LIBRARY_PATH` to build and run a sample
   external Go module, verified by `scripts/smoke-external-module.sh`.
-- [ ] README or quickstart docs show the library user path with `go get`, import
+- [x] README or quickstart docs show the library user path with `go get`, import
   example, native bundle setup, build tags, and a successful command output.
 - [x] `third_party/curl-impersonate` source handling is intentional and reproducible
   at the repo-file level: committed as a submodule with `.gitmodules`. Native
   workflow logs are covered by the GitHub Actions checklist items above.
-- [ ] `docs/native-distribution.md` states why submodule alone does not solve
+- [x] `docs/native-distribution.md` states why submodule alone does not solve
   consumer installation, and identifies the selected next step toward
   `curl_cffi`-like Go library ergonomics.
