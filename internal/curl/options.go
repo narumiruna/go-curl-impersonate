@@ -69,7 +69,7 @@ func (p NativePlan) OptionSteps() []OptionStep {
 		OptionStep{Name: "CURLOPT_SSL_VERIFYHOST", Value: p.TLSVerify},
 	)
 	if p.HTTP2 {
-		steps = append(steps, OptionStep{Name: "CURLOPT_HTTP_VERSION", Value: "CURL_HTTP_VERSION_2TLS"})
+		steps = append(steps, OptionStep{Name: "CURLOPT_HTTP_VERSION", Value: "CURL_HTTP_VERSION_2_0"})
 	}
 	return steps
 }

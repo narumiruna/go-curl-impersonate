@@ -13,6 +13,9 @@ import (
 type ResponseSpec struct {
 	StatusCode int
 	Status     string
+	Proto      string
+	ProtoMajor int
+	ProtoMinor int
 	Header     http.Header
 	Body       []byte
 }
@@ -61,6 +64,9 @@ func NewHTTPResponse(req *http.Request, spec ResponseSpec) (*http.Response, erro
 	return &http.Response{
 		StatusCode:    spec.StatusCode,
 		Status:        status,
+		Proto:         spec.Proto,
+		ProtoMajor:    spec.ProtoMajor,
+		ProtoMinor:    spec.ProtoMinor,
 		Header:        spec.Header.Clone(),
 		Body:          io.NopCloser(bytes.NewReader(spec.Body)),
 		ContentLength: int64(len(spec.Body)),
@@ -75,7 +81,7 @@ func ParseHeaderBlock(block string) (ResponseSpec, error) {
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) == "" {
 		return ResponseSpec{}, fmt.Errorf("curl: empty response header block")
 	}
-	statusCode, status, err := parseStatusLine(lines[0])
+	proto, protoMajor, protoMinor, statusCode, status, err := parseStatusLine(lines[0])
 	if err != nil {
 		return ResponseSpec{}, err
 	}
@@ -91,17 +97,22 @@ func ParseHeaderBlock(block string) (ResponseSpec, error) {
 		}
 		header.Add(strings.TrimSpace(name), strings.TrimSpace(value))
 	}
-	return ResponseSpec{StatusCode: statusCode, Status: status, Header: header}, nil
+	return ResponseSpec{StatusCode: statusCode, Status: status, Proto: proto, ProtoMajor: protoMajor, ProtoMinor: protoMinor, Header: header}, nil
 }
 
-func parseStatusLine(line string) (int, string, error) {
+func parseStatusLine(line string) (string, int, int, int, string, error) {
 	fields := strings.Fields(strings.TrimSpace(line))
 	if len(fields) < 2 || !strings.HasPrefix(fields[0], "HTTP/") {
-		return 0, "", fmt.Errorf("curl: malformed response status line %q", line)
+		return "", 0, 0, 0, "", fmt.Errorf("curl: malformed response status line %q", line)
+	}
+	proto := fields[0]
+	protoMajor, protoMinor, err := parseProto(proto)
+	if err != nil {
+		return "", 0, 0, 0, "", err
 	}
 	statusCode, err := strconv.Atoi(fields[1])
 	if err != nil {
-		return 0, "", fmt.Errorf("curl: malformed response status code %q", fields[1])
+		return "", 0, 0, 0, "", fmt.Errorf("curl: malformed response status code %q", fields[1])
 	}
 	status := strconv.Itoa(statusCode)
 	if len(fields) > 2 {
@@ -109,5 +120,25 @@ func parseStatusLine(line string) (int, string, error) {
 	} else if text := http.StatusText(statusCode); text != "" {
 		status += " " + text
 	}
-	return statusCode, status, nil
+	return proto, protoMajor, protoMinor, statusCode, status, nil
+}
+
+func parseProto(proto string) (int, int, error) {
+	version := strings.TrimPrefix(proto, "HTTP/")
+	if version == proto || version == "" {
+		return 0, 0, fmt.Errorf("curl: malformed response proto %q", proto)
+	}
+	majorText, minorText, hasMinor := strings.Cut(version, ".")
+	major, err := strconv.Atoi(majorText)
+	if err != nil {
+		return 0, 0, fmt.Errorf("curl: malformed response proto %q", proto)
+	}
+	if !hasMinor {
+		return major, 0, nil
+	}
+	minor, err := strconv.Atoi(minorText)
+	if err != nil {
+		return 0, 0, fmt.Errorf("curl: malformed response proto %q", proto)
+	}
+	return major, minor, nil
 }

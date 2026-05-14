@@ -4,9 +4,9 @@ Go bindings and a high-level client API for `lwthiker/curl-impersonate`.
 
 This repository is in early implementation. The checked-in Go module currently
 contains the public package skeleton, profile resolution, client option model,
-basic tests, and documentation for the native dependency work. Actual HTTP
-requests through `libcurl-impersonate` are still behind the native integration
-work described in `docs/plans/2026-05-14_go-curl-cffi-plan.md`.
+native cgo backend, local integration tests, and documentation for the native
+dependency work. Full release readiness is still tracked in
+`docs/plans/2026-05-14_go-curl-cffi-plan.md`.
 
 ## Goal
 
@@ -24,8 +24,12 @@ The first release target is Linux amd64 with cgo and a native
   native curl-impersonate targets from the checked-in reference.
 - `client` exposes `NewClient`, `Do`, and option helpers for profile, cookies,
   timeout, proxy, redirects, TLS verification, and HTTP/2 intent.
-- Default builds do not link native libraries yet. `Do` returns a native backend
-  unavailable error until the integration build is implemented.
+- Default builds do not link native libraries. `Do` returns a native backend
+  unavailable error unless built with `-tags="integration native"` and cgo
+  flags for curl-impersonate.
+- The native backend has local Chrome/Firefox request tests. Chrome TLS and
+  HTTP/2 fingerprints match upstream fixtures; Firefox HTTP/2 matches, while
+  Firefox TLS still has a tracked fixture mismatch.
 
 ## Packages
 
@@ -81,7 +85,7 @@ a network request until the native curl-impersonate backend is enabled.
 Ubuntu prerequisites for building or checking native artifacts:
 
 ```sh
-sudo apt install build-essential pkg-config cmake ninja-build curl autoconf automake libtool python3-pip libnss3 nss-plugin-pem ca-certificates zlib1g-dev unzip
+sudo apt install build-essential pkg-config cmake ninja-build curl autoconf automake libtool python3-pip python3-yaml libnss3 nss-plugin-pem ca-certificates zlib1g-dev unzip nghttp2-server
 ```
 
 These packages provide the compiler/tooling and runtime dependencies. They do
@@ -102,7 +106,12 @@ Run the diagnostic CLI:
 go run ./cmd/go-curl-impersonate
 sh ./scripts/check-native.sh
 sh ./scripts/smoke-atp.sh
+/usr/bin/python3 scripts/check-fingerprint.py --profile chrome
 ```
+
+For local prefix builds, run the native scripts with
+`PKG_CONFIG_PATH=/tmp/curl-impersonate-local/lib/pkgconfig` and
+`LD_LIBRARY_PATH=/tmp/curl-impersonate-local/lib`.
 
 `go test -tags=integration ./...` keeps using the no-native placeholder.
 `sh ./scripts/check-native.sh` validates native artifacts and then runs the

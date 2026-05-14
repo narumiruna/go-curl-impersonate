@@ -127,6 +127,26 @@ sh ./scripts/check-native.sh
 This validates both backend libraries, then runs the Go cgo backend once with
 the Chrome library/profile and once with the Firefox library/profile.
 
+Fingerprint verification uses the same native build inputs plus Python/PyYAML
+and `nghttpd`:
+
+```sh
+sudo apt install python3-yaml nghttp2-server
+
+PKG_CONFIG_PATH=/tmp/curl-impersonate-local/lib/pkgconfig \
+GOCACHE=/tmp/go-build \
+/usr/bin/python3 scripts/check-fingerprint.py --profile chrome
+
+PKG_CONFIG_PATH=/tmp/curl-impersonate-local/lib/pkgconfig \
+GOCACHE=/tmp/go-build \
+/usr/bin/python3 scripts/check-fingerprint.py --profile firefox --skip-tls
+```
+
+The Chrome command verifies both TLS ClientHello and HTTP/2 header ordering
+against upstream fixtures. The Firefox command currently verifies HTTP/2 only;
+Firefox TLS still has a local `psk_key_exchange_modes` fixture mismatch tracked
+in `docs/fingerprint-verification.md`.
+
 ## CI Plan
 
 Default CI should run:

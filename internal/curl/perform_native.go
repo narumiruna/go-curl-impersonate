@@ -251,7 +251,7 @@ func applyNativeOptions(easy unsafe.Pointer, options Options) (func(), error) {
 		return func() {}, err
 	}
 	if plan.HTTP2 {
-		if err := checkCode("CURLOPT_HTTP_VERSION", C.gci_set_http_version(easy, C.CURL_HTTP_VERSION_2TLS)); err != nil {
+		if err := checkCode("CURLOPT_HTTP_VERSION", C.gci_set_http_version(easy, C.CURL_HTTP_VERSION_2_0)); err != nil {
 			cleanup()
 			return func() {}, err
 		}
