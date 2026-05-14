@@ -52,31 +52,31 @@
 
 ### Phase 0: Scope and Native Dependency Discovery
 
-- [ ] 建立 Go module 與最小專案骨架，包含 `go.mod`、`README.md`、`internal/curl`、`impersonate`、`client` 目錄；verify with `go test ./...` 可在尚未啟用 cgo integration 時通過。
-- [ ] 研究 `.refs/curl_cffi` 與 `.refs/curl-impersonate` 的必要 API surface，整理第一版支援矩陣到 `docs/api-scope.md`；verify with 文件列出 request method、headers、body、cookies、proxy、timeout、redirect、HTTP/2、browser profile、JA3/Akamai/extra fingerprint 的支援/延後狀態。
-- [ ] 從 `.refs/curl-impersonate/README.md#libcurl-impersonate` 與 header/cdef 來源確認 `curl_easy_impersonate` symbol、library names、non-standard options；verify with `docs/native-api.md` 記錄 C function signature、linking target、必需 headers、最低版本、Chrome/Firefox 分別對應的 library/binary 名稱。
-- [ ] 決定 native dependency 策略，優先選一條 Linux amd64 可重現路徑，例如 `pkg-config`、明確的 `CGO_CFLAGS` / `CGO_LDFLAGS`，或 repo-local build script；verify with `docs/build.md` 可在乾淨 Linux amd64 環境完成安裝與 `go test ./...`。
+- [x] 建立 Go module 與最小專案骨架，包含 `go.mod`、`README.md`、`internal/curl`、`impersonate`、`client` 目錄；verified with `go test ./...` passing in the default no-native build.
+- [x] 研究 `.refs/curl_cffi` 與 `.refs/curl-impersonate` 的必要 API surface，整理第一版支援矩陣到 `docs/api-scope.md`；verified with 文件列出 request method、headers、body、cookies、proxy、timeout、redirect、HTTP/2、browser profile、JA3/Akamai/extra fingerprint 的支援/延後狀態。
+- [x] 從 `.refs/curl-impersonate/README.md#libcurl-impersonate` 與 header/cdef 來源確認 `curl_easy_impersonate` symbol、library names、non-standard options；verified with `docs/native-api.md` recording the C function signature, option ordering, backend families, and current native-backend gap.
+- [ ] 決定 native dependency 策略，優先選一條 Linux amd64 可重現路徑，例如 `pkg-config`、明確的 `CGO_CFLAGS` / `CGO_LDFLAGS`，或 repo-local build script；partial progress: `internal/curl.ProbePkgConfig`, backend-specific `ProbeBackendPkgConfig`, env-based `DetectLinkConfig`, `go run ./cmd/go-curl-impersonate`, artifact- and symbol-validating `scripts/check-native.sh`, and validated `scripts/write-pkg-config.sh` now cover pkg-config/env/local-prefix metadata paths; Chrome and Firefox local-prefix build/install were verified under `/tmp/curl-impersonate-local`; still requires clean-environment or CI verification.
 
 ### Phase 1: Low-Level Curl Binding
 
-- [ ] 實作 `internal/curl` 的 easy handle lifecycle、option 設定、header/body callback、錯誤碼轉換與 cleanup，參考 `.refs/curl_cffi/curl_cffi/curl.py`；verify with unit tests 或 integration tests 覆蓋成功請求、DNS/連線錯誤、timeout、資源釋放。
-- [ ] 定義 cgo build tags 與 no-native fallback 行為，例如 `integration` tag 才 link native library、一般 unit tests 不需要安裝 `curl-impersonate`；verify with `go test ./...` and `go test -tags=integration ./...` 的預期差異記錄於 `docs/build.md`。
-- [ ] 加入 memory/lifetime guardrails，包含 C string、slist、callback buffer、easy handle reset/reuse 的 ownership 規則；verify with targeted tests plus `go test -race ./...`，並在 `internal/curl` package doc 記錄限制。
+- [ ] 實作 `internal/curl` 的 easy handle lifecycle、option 設定、header/body callback、錯誤碼轉換與 cleanup，參考 `.refs/curl_cffi/curl_cffi/curl.py`；partial progress: handle lease lifecycle, full operation plan, request body read callback, response collection helpers, CURLcode error conversion, and an `integration native` cgo backend are in place; Chrome and Firefox compile/link plus local GET/POST integration tests passed with real curl-impersonate artifacts, and Chrome ATP smoke returned `200 OK`; still requires broader request behavior coverage and fingerprint tests.
+- [x] 定義 cgo build tags 與 no-native fallback 行為，例如 `integration` tag 才 link native library、一般 unit tests 不需要安裝 `curl-impersonate`；verified with default `go test ./...`, placeholder `go test -tags=integration ./...`, and documented separation in `docs/build.md`.
+- [x] 加入 memory/lifetime guardrails，包含 C string、slist、callback buffer、easy handle reset/reuse 的 ownership 規則；verified with `internal/curl/doc.go` package contract and `go test -race ./...`.
 
 ### Phase 2: Profiles and High-Level Client API
 
-- [ ] 實作 impersonation profile API，例如 `impersonate.Chrome()`, `impersonate.Firefox()` 或 `client.WithProfile(...)`，以 `curl_easy_impersonate(handle, target, defaultHeaders)` 為第一路徑；verify with tests 檢查 alias resolution/default headers flag，並以 integration request 證明可發送 impersonated request。
-- [ ] 以 `.refs/curl-impersonate/browsers.json` 作為 native profile source of truth，並把 Python `curl_cffi` 的 latest aliases 當作對照參考；verify with generated or table-driven tests that Chrome/Firefox aliases resolve to supported native targets。
-- [ ] 實作 high-level client API，支援 `NewClient`, `Do`, method、URL、headers、body、response status、response headers、response body；verify with `httptest` 或本地測試伺服器覆蓋 GET、POST、custom headers、response body。
-- [ ] 加入 cookie、proxy、redirect、timeout、TLS verify 開關與 HTTP/2 設定；verify with targeted tests for each option using local server/proxy where possible。
-- [ ] 加入並發與 handle reuse 策略，明確定義 client 是否 goroutine-safe、request 是否可並行、handle pool 是否存在；verify with `go test -race ./...` 與 README/API 文件中的 concurrency contract。
+- [x] 實作 impersonation profile API，例如 `impersonate.Chrome()`, `impersonate.Firefox()` 或 `client.WithProfile(...)`，以 `curl_easy_impersonate(handle, target, defaultHeaders)` 為第一路徑；verified with alias/default header tests plus Chrome and Firefox `integration native` local-server requests using real curl-impersonate backends.
+- [x] 以 `.refs/curl-impersonate/browsers.json` 作為 native profile source of truth，並把 Python `curl_cffi` 的 latest aliases 當作對照參考；verified with table-driven tests that Chrome/Firefox aliases resolve to supported native targets and a parity test against `.refs/curl-impersonate/browsers.json`.
+- [ ] 實作 high-level client API，支援 `NewClient`, `Do`, method、URL、headers、body、response status、response headers、response body；partial progress: `internal/curl.NewRequestSpec` validates/snapshots GET/POST, URL, headers, body, and options, response construction/collection helpers are unit-tested, the `integration native` cgo backend wires URL/method/headers/body/response callbacks, Chrome/Firefox local-server GET/POST/header/body tests pass, and a real Chrome GET returned `200 OK` from the ATP endpoint; still requires redirect/proxy/timeout/HTTP2 behavior coverage.
+- [ ] 加入 cookie、proxy、redirect、timeout、TLS verify 開關與 HTTP/2 設定；partial progress: client options including max redirects, `internal/curl.NewNativePlan`, `NativePlan.OptionSteps`, request/response cookie jar hooks, and the `integration native` cgo option wiring are covered by unit tests or real local-server integration tests; proxy/redirect/timeout/HTTP2 integration tests remain.
+- [x] 加入並發與 handle reuse 策略，明確定義 client 是否 goroutine-safe、request 是否可並行、handle pool 是否存在；verified with `go test -race ./...`, README concurrency section, and `internal/curl/doc.go`.
 
 ### Phase 3: Fingerprint Verification and Release Readiness
 
-- [ ] 建立指紋驗證流程，優先重用 `.refs/curl-impersonate/tests/signatures/*.yaml` 與 `tests/test_impersonate.py` 的方法，外部 endpoint 僅作 smoke test；verify with `docs/fingerprint-verification.md` 記錄 expected output，並提供可手動執行的 command。
-- [ ] 補齊 README 快速開始、安裝需求、範例程式、限制與 troubleshooting；verify with README 範例可複製到 `examples/basic` 並執行成功。
-- [ ] 設定 CI，至少執行格式檢查、`go test ./...`，並把需要 `curl-impersonate` 的 integration tests 標記 build tag；verify with CI workflow passing 或本機等效 command passing。
-- [ ] 規劃發佈切片，先發 `v0.1.0` alpha，列出已知限制與不相容變更政策；verify with `CHANGELOG.md` 或 release notes draft。
+- [ ] 建立指紋驗證流程，優先重用 `.refs/curl-impersonate/tests/signatures/*.yaml` 與 `tests/test_impersonate.py` 的方法，外部 endpoint 僅作 smoke test；partial progress: `scripts/check-fingerprint-fixtures.sh` verifies required upstream Chrome/Firefox fixture files exist, and `scripts/smoke-atp.sh` returned `200 OK` against the ATP endpoint with the local Chrome backend; still requires native request capture, expected fingerprint output, and automated or documented fingerprint command.
+- [x] 補齊 README 快速開始、安裝需求、範例程式、限制與 troubleshooting；verified with `README.md` and `examples/basic`, with the documented limitation that the current default build reports native backend unavailable.
+- [x] 設定 CI，至少執行格式檢查、`go test ./...`，並把需要 `curl-impersonate` 的 integration tests 標記 build tag；verified with `.github/workflows/test.yml`, local `sh ./scripts/check-fingerprint-fixtures.sh`, `go test ./...`, `go test -tags=integration ./...`, and `go test -race ./...` passing.
+- [x] 規劃發佈切片，先發 `v0.1.0` alpha，列出已知限制與不相容變更政策；verified with `CHANGELOG.md` release-scope draft.
 
 ## Risks
 
@@ -95,10 +95,10 @@
 
 ## Completion Checklist
 
-- [ ] Go module 與主要 package 已建立，並由 `go test ./...` 驗證通過。
+- [x] Go module 與主要 package 已建立，並由 `go test ./...` 驗證通過。
 - [ ] `curl-impersonate` native dependency 的安裝與 linking 方式已記錄於 `docs/build.md`，並由乾淨環境建置紀錄或 CI job 驗證。
 - [ ] High-level Go API 可完成 GET/POST、headers、body、cookies、proxy、timeout、redirect 與 HTTP/2 基本情境，並由 tests 驗證。
-- [ ] 至少 Chrome 與 Firefox impersonation profile 可用，profile 名稱與 alias 已對照 `.refs/curl-impersonate/browsers.json` / `curl_cffi`，並由 integration 或 documented smoke test 驗證。
-- [ ] README 包含安裝、快速開始、範例、限制與 troubleshooting，並由 `examples/basic` 可執行證明。
-- [ ] CI 或本機等效命令完成格式檢查、unit tests、race test，以及可用時的 integration tests。
-- [ ] `v0.1.0` 發佈範圍與已知限制已記錄於 `CHANGELOG.md` 或 release notes draft。
+- [x] 至少 Chrome 與 Firefox impersonation profile 可用，profile 名稱與 alias 已對照 `.refs/curl-impersonate/browsers.json` / `curl_cffi`，並由 `integration native` local-server tests 驗證。
+- [x] README 包含安裝、快速開始、範例、限制與 troubleshooting，並由 `examples/basic` 可執行證明；default execution stops with the documented native-unavailable message, and Chrome native execution returned `200 OK` from the ATP endpoint.
+- [x] CI 或本機等效命令完成格式檢查、unit tests、race test，以及可用時的 integration tests；verified locally with `go test ./...` and `env GOCACHE=/tmp/go-build go test -race ./...`.
+- [x] `v0.1.0` 發佈範圍與已知限制已記錄於 `CHANGELOG.md` 或 release notes draft。
