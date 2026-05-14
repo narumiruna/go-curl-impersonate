@@ -42,8 +42,12 @@ def main() -> int:
     parser.add_argument("--expected-signature")
     parser.add_argument("--skip-tls", action="store_true")
     parser.add_argument("--skip-http2", action="store_true")
+    parser.add_argument("--curl-binary", help="diagnose a curl-impersonate wrapper instead of the Go client")
+    parser.add_argument("--compare-curl-binary", help="compare the Go client against a curl-impersonate wrapper")
     parser.add_argument("--timeout", type=float, default=15.0)
     args = parser.parse_args()
+    if args.curl_binary and args.compare_curl_binary:
+        raise SystemExit("--curl-binary and --compare-curl-binary are mutually exclusive")
 
     expected_name = args.expected_signature or DEFAULT_EXPECTED_SIGNATURES.get(args.profile)
     if not expected_name:
@@ -55,9 +59,23 @@ def main() -> int:
     expected = docs[expected_name]["signature"]
 
     if not args.skip_tls:
-        verify_tls(args.profile, expected_name, expected, args.timeout)
+        verify_tls(
+            args.profile,
+            expected_name,
+            expected,
+            args.timeout,
+            args.curl_binary,
+            args.compare_curl_binary,
+        )
     if not args.skip_http2:
-        verify_http2(args.profile, expected_name, expected, args.timeout)
+        verify_http2(
+            args.profile,
+            expected_name,
+            expected,
+            args.timeout,
+            args.curl_binary,
+            args.compare_curl_binary,
+        )
     return 0
 
 
@@ -69,19 +87,27 @@ def load_signatures(path: pathlib.Path) -> dict:
     return docs
 
 
-def verify_tls(profile: str, expected_name: str, expected: dict, timeout: float) -> None:
-    captured = queue.Queue()
-    ready = queue.Queue()
-    thread = threading.Thread(target=capture_tls_record, args=(captured, ready), daemon=True)
-    thread.start()
-    port = ready.get(timeout=timeout)
-    url = f"https://localhost:{port}/"
-    run_go_probe(profile, url, timeout, allow_request_error=True)
-    record = captured.get(timeout=timeout)
+def verify_tls(
+    profile: str,
+    expected_name: str,
+    expected: dict,
+    timeout: float,
+    curl_binary: str | None,
+    compare_curl_binary: str | None,
+) -> None:
+    allow_permutation = expected.get("options", {}).get("tls_permute_extensions", False)
+    if compare_curl_binary:
+        go_sig = TLSClientHelloSignature.from_bytes(capture_tls_probe(profile, timeout, curl_binary=None))
+        curl_sig = TLSClientHelloSignature.from_bytes(capture_tls_probe(profile, timeout, curl_binary=compare_curl_binary))
+        equals, reason = go_sig.equals(curl_sig, allow_tls_permutation=allow_permutation, reason=True)
+        if not equals:
+            raise SystemExit(f"Go TLS fingerprint differs from {compare_curl_binary}: {reason}")
+        print(f"TLS fingerprint matches curl wrapper {compare_curl_binary}")
+        return
 
+    record = capture_tls_probe(profile, timeout, curl_binary)
     actual_sig = TLSClientHelloSignature.from_bytes(record)
     expected_sig = TLSClientHelloSignature.from_dict(expected["tls_client_hello"])
-    allow_permutation = expected.get("options", {}).get("tls_permute_extensions", False)
     equals, reason = actual_sig.equals(
         expected_sig,
         allow_tls_permutation=allow_permutation,
@@ -90,6 +116,17 @@ def verify_tls(profile: str, expected_name: str, expected: dict, timeout: float)
     if not equals:
         raise SystemExit(f"TLS fingerprint mismatch for {expected_name}: {reason}")
     print(f"TLS fingerprint matches {expected_name}")
+
+
+def capture_tls_probe(profile: str, timeout: float, curl_binary: str | None) -> bytes:
+    captured = queue.Queue()
+    ready = queue.Queue()
+    thread = threading.Thread(target=capture_tls_record, args=(captured, ready), daemon=True)
+    thread.start()
+    port = ready.get(timeout=timeout)
+    url = f"https://localhost:{port}/"
+    run_probe(profile, url, timeout, allow_request_error=True, curl_binary=curl_binary, tls_verify=True)
+    return captured.get(timeout=timeout)
 
 
 def capture_tls_record(captured: queue.Queue, ready: queue.Queue) -> None:
@@ -115,7 +152,32 @@ def recv_exact(conn: socket.socket, size: int) -> bytes:
     return bytes(chunks)
 
 
-def verify_http2(profile: str, expected_name: str, expected: dict, timeout: float) -> None:
+def verify_http2(
+    profile: str,
+    expected_name: str,
+    expected: dict,
+    timeout: float,
+    curl_binary: str | None,
+    compare_curl_binary: str | None,
+) -> None:
+    if compare_curl_binary:
+        go_sig = capture_http2_signature(profile, timeout, curl_binary=None)
+        curl_sig = capture_http2_signature(profile, timeout, curl_binary=compare_curl_binary)
+        equals, reason = go_sig.equals(curl_sig, reason=True)
+        if not equals:
+            raise SystemExit(f"Go HTTP/2 fingerprint differs from {compare_curl_binary}: {reason}")
+        print(f"HTTP/2 fingerprint matches curl wrapper {compare_curl_binary}")
+        return
+
+    actual_sig = capture_http2_signature(profile, timeout, curl_binary)
+    expected_sig = HTTP2Signature.from_dict(expected["http2"])
+    equals, reason = actual_sig.equals(expected_sig, reason=True)
+    if not equals:
+        raise SystemExit(f"HTTP/2 fingerprint mismatch for {expected_name}: {reason}")
+    print(f"HTTP/2 fingerprint matches {expected_name}")
+
+
+def capture_http2_signature(profile: str, timeout: float, curl_binary: str | None) -> HTTP2Signature:
     nghttpd = shutil.which("nghttpd")
     if nghttpd is None:
         raise SystemExit("missing nghttpd; install the nghttp2 server package or pass --skip-http2")
@@ -138,7 +200,14 @@ def verify_http2(profile: str, expected_name: str, expected: dict, timeout: floa
     reader.start()
     try:
         wait_for_nghttpd(lines, port, timeout)
-        run_go_probe(profile, f"https://localhost:{port}/", timeout, allow_request_error=False)
+        run_probe(
+            profile,
+            f"https://localhost:{port}/",
+            timeout,
+            allow_request_error=False,
+            curl_binary=curl_binary,
+            tls_verify=False,
+        )
         output = collect_lines(lines, timeout=2.0)
     finally:
         proc.terminate()
@@ -149,12 +218,7 @@ def verify_http2(profile: str, expected_name: str, expected: dict, timeout: floa
             proc.wait(timeout=3)
 
     pseudo_headers, headers = parse_nghttpd_output(output)
-    actual_sig = HTTP2Signature(pseudo_headers, headers)
-    expected_sig = HTTP2Signature.from_dict(expected["http2"])
-    equals, reason = actual_sig.equals(expected_sig, reason=True)
-    if not equals:
-        raise SystemExit(f"HTTP/2 fingerprint mismatch for {expected_name}: {reason}")
-    print(f"HTTP/2 fingerprint matches {expected_name}")
+    return HTTP2Signature(pseudo_headers, headers)
 
 
 def free_port() -> int:
@@ -219,7 +283,48 @@ def parse_nghttpd_output(lines: Iterable[str]) -> tuple[list[str], list[str]]:
     return pseudo_headers, headers
 
 
-def run_go_probe(profile: str, url: str, timeout: float, allow_request_error: bool) -> None:
+def run_probe(
+    profile: str,
+    url: str,
+    timeout: float,
+    allow_request_error: bool,
+    curl_binary: str | None,
+    tls_verify: bool,
+) -> None:
+    if curl_binary:
+        run_curl_probe(curl_binary, url, timeout, allow_request_error, tls_verify)
+        return
+    run_go_probe(profile, url, timeout, allow_request_error, tls_verify)
+
+
+def run_curl_probe(curl_binary: str, url: str, timeout: float, allow_request_error: bool, tls_verify: bool) -> None:
+    command = [
+        curl_binary,
+        "--max-time",
+        str(timeout),
+        "-o",
+        os.devnull,
+    ]
+    if not tls_verify:
+        command.append("-k")
+    command.append(url)
+    result = subprocess.run(
+        command,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout + 1,
+        check=False,
+    )
+    if result.returncode != 0 and not allow_request_error:
+        raise SystemExit(
+            "curl fingerprint probe failed\n"
+            f"stdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}"
+        )
+
+
+def run_go_probe(profile: str, url: str, timeout: float, allow_request_error: bool, tls_verify: bool) -> None:
     env = go_probe_env(profile)
     command = [
         "go",
@@ -228,7 +333,7 @@ def run_go_probe(profile: str, url: str, timeout: float, allow_request_error: bo
         "./cmd/go-curl-impersonate",
         "-profile",
         profile,
-        "-tls-verify=false",
+        f"-tls-verify={str(tls_verify).lower()}",
         "-url",
         url,
     ]

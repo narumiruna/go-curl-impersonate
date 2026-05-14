@@ -59,6 +59,9 @@ func TestSupportedTargetsMatchCurlImpersonateReference(t *testing.T) {
 	path := referencePath(t, ".refs", "curl-impersonate", "browsers.json")
 	content, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			t.Skipf("curl-impersonate reference clone is not present: %s", path)
+		}
 		t.Fatalf("ReadFile(%s) returned error: %v", path, err)
 	}
 	var reference struct {

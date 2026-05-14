@@ -18,6 +18,9 @@ Verify the checked-in reference fixtures are present with:
 sh ./scripts/check-fingerprint-fixtures.sh
 ```
 
+The reference clone lives under ignored `.refs/`, so this check skips in a
+plain CI checkout where the reference clone is not present.
+
 The first release must cover at least:
 
 - `.refs/curl-impersonate/tests/signatures/chrome.yaml`
@@ -53,29 +56,38 @@ TLS fingerprint matches chrome_116.0.5845.180_win10
 HTTP/2 fingerprint matches chrome_116.0.5845.180_win10
 ```
 
-Firefox HTTP/2 header ordering is also verified:
+Firefox TLS and HTTP/2 are also verified:
 
 ```sh
 PKG_CONFIG_PATH=/tmp/curl-impersonate-local/lib/pkgconfig \
 GOCACHE=/tmp/go-build \
-/usr/bin/python3 scripts/check-fingerprint.py --profile firefox --skip-tls
+/usr/bin/python3 scripts/check-fingerprint.py --profile firefox
 ```
 
 Current verified output:
 
 ```text
+TLS fingerprint matches firefox_117.0.1_win10
 HTTP/2 fingerprint matches firefox_117.0.1_win10
 ```
 
-Firefox TLS verification is still blocked by one fixture mismatch in the local
-capture:
+For diagnostics, the verifier can also compare the Go client directly against a
+locally built upstream wrapper:
 
-```text
-TLS fingerprint mismatch for firefox_117.0.1_win10: TLS extension lists differ: Symmatric difference [<TLSExtensionType.psk_key_exchange_modes: 45>]
+```sh
+PKG_CONFIG_PATH=/tmp/curl-impersonate-local/lib/pkgconfig \
+GOCACHE=/tmp/go-build \
+/usr/bin/python3 scripts/check-fingerprint.py \
+  --profile firefox \
+  --compare-curl-binary /tmp/curl-impersonate-local/bin/curl_ff117 \
+  --skip-http2
 ```
 
-That mismatch means the repo must not yet claim complete Firefox TLS
-fingerprint parity.
+Current verified output:
+
+```text
+TLS fingerprint matches curl wrapper /tmp/curl-impersonate-local/bin/curl_ff117
+```
 
 ## Public Endpoint Smoke Test
 
@@ -111,5 +123,5 @@ libraries against local Go integration tests. The public ATP smoke then returned
 
 ## Release Requirement
 
-Before `v0.1.0`, the remaining release blocker is to resolve or explain the
-Firefox TLS `psk_key_exchange_modes` mismatch with upstream parity evidence.
+Before `v0.1.0`, the remaining release blocker is to run this verifier in a
+clean native environment or CI job rather than only in this local workspace.

@@ -55,11 +55,11 @@
 - [x] 建立 Go module 與最小專案骨架，包含 `go.mod`、`README.md`、`internal/curl`、`impersonate`、`client` 目錄；verified with `go test ./...` passing in the default no-native build.
 - [x] 研究 `.refs/curl_cffi` 與 `.refs/curl-impersonate` 的必要 API surface，整理第一版支援矩陣到 `docs/api-scope.md`；verified with 文件列出 request method、headers、body、cookies、proxy、timeout、redirect、HTTP/2、browser profile、JA3/Akamai/extra fingerprint 的支援/延後狀態。
 - [x] 從 `.refs/curl-impersonate/README.md#libcurl-impersonate` 與 header/cdef 來源確認 `curl_easy_impersonate` symbol、library names、non-standard options；verified with `docs/native-api.md` recording the C function signature, option ordering, backend families, and current native-backend gap.
-- [ ] 決定 native dependency 策略，優先選一條 Linux amd64 可重現路徑，例如 `pkg-config`、明確的 `CGO_CFLAGS` / `CGO_LDFLAGS`，或 repo-local build script；partial progress: `internal/curl.ProbePkgConfig`, backend-specific `ProbeBackendPkgConfig`, env-based `DetectLinkConfig`, `go run ./cmd/go-curl-impersonate`, artifact- and symbol-validating `scripts/check-native.sh`, and validated `scripts/write-pkg-config.sh` now cover pkg-config/env/local-prefix metadata paths; Chrome and Firefox local-prefix build/install were verified under `/tmp/curl-impersonate-local`, including local redirect/proxy/timeout/HTTP2 native tests; still requires clean-environment or CI verification.
+- [x] 決定 native dependency 策略，優先選一條 Linux amd64 可重現路徑，例如 `pkg-config`、明確的 `CGO_CFLAGS` / `CGO_LDFLAGS`，或 repo-local build script；verified with `internal/curl.ProbePkgConfig`, backend-specific `ProbeBackendPkgConfig`, env-based `DetectLinkConfig`, `go run ./cmd/go-curl-impersonate`, artifact- and symbol-validating `scripts/check-native.sh`, and validated `scripts/write-pkg-config.sh` covering pkg-config/env/local-prefix metadata paths. Chrome and Firefox local-prefix build/install were verified under `/tmp/curl-impersonate-local`, including local redirect/proxy/timeout/HTTP2 native tests, and `scripts/check-native.sh` passed under a clean `env -i` environment with only required PATH/HOME/PKG_CONFIG_PATH/LD_LIBRARY_PATH/GOCACHE.
 
 ### Phase 1: Low-Level Curl Binding
 
-- [ ] 實作 `internal/curl` 的 easy handle lifecycle、option 設定、header/body callback、錯誤碼轉換與 cleanup，參考 `.refs/curl_cffi/curl_cffi/curl.py`；partial progress: handle lease lifecycle, full operation plan, request body read callback, response collection helpers, CURLcode error conversion, and an `integration native` cgo backend are in place; Chrome and Firefox compile/link plus local GET/POST/redirect/proxy/timeout/HTTP2 integration tests passed with real curl-impersonate artifacts, and Chrome ATP smoke returned `200 OK`; still requires complete Firefox TLS fingerprint parity.
+- [x] 實作 `internal/curl` 的 easy handle lifecycle、option 設定、header/body callback、錯誤碼轉換與 cleanup，參考 `.refs/curl_cffi/curl_cffi/curl.py`；verified with handle lease lifecycle, full operation plan, request body snapshotting, response collection helpers, CURLcode error conversion, an `integration native` cgo backend, Chrome/Firefox local GET/POST/redirect/proxy/timeout/HTTP2 integration tests, Chrome ATP smoke returning `200 OK`, and Chrome/Firefox TLS/HTTP2 fingerprint checks matching upstream fixtures.
 - [x] 定義 cgo build tags 與 no-native fallback 行為，例如 `integration` tag 才 link native library、一般 unit tests 不需要安裝 `curl-impersonate`；verified with default `go test ./...`, placeholder `go test -tags=integration ./...`, and documented separation in `docs/build.md`.
 - [x] 加入 memory/lifetime guardrails，包含 C string、slist、callback buffer、easy handle reset/reuse 的 ownership 規則；verified with `internal/curl/doc.go` package contract and `go test -race ./...`.
 
@@ -73,7 +73,7 @@
 
 ### Phase 3: Fingerprint Verification and Release Readiness
 
-- [ ] 建立指紋驗證流程，優先重用 `.refs/curl-impersonate/tests/signatures/*.yaml` 與 `tests/test_impersonate.py` 的方法，外部 endpoint 僅作 smoke test；partial progress: `scripts/check-fingerprint.py` now captures the Go client's TLS ClientHello locally and parses `nghttpd -v` HTTP/2 output against upstream YAML fixtures. Chrome TLS and HTTP/2 match `chrome_116.0.5845.180_win10`; Firefox HTTP/2 matches `firefox_117.0.1_win10`; Firefox TLS still mismatches on `psk_key_exchange_modes`.
+- [x] 建立指紋驗證流程，優先重用 `.refs/curl-impersonate/tests/signatures/*.yaml` 與 `tests/test_impersonate.py` 的方法，外部 endpoint 僅作 smoke test；verified with `scripts/check-fingerprint.py` capturing TLS ClientHello locally and parsing `nghttpd -v` HTTP/2 output against upstream YAML fixtures. Chrome TLS/HTTP2 match `chrome_116.0.5845.180_win10`; Firefox TLS/HTTP2 match `firefox_117.0.1_win10`. The verifier can also compare the Go client directly with local upstream wrappers for native binding parity.
 - [x] 補齊 README 快速開始、安裝需求、範例程式、限制與 troubleshooting；verified with `README.md` and `examples/basic`, with the documented limitation that the current default build reports native backend unavailable.
 - [x] 設定 CI，至少執行格式檢查、`go test ./...`，並把需要 `curl-impersonate` 的 integration tests 標記 build tag；verified with `.github/workflows/test.yml`, local `sh ./scripts/check-fingerprint-fixtures.sh`, `go test ./...`, `go test -tags=integration ./...`, and `go test -race ./...` passing.
 - [x] 規劃發佈切片，先發 `v0.1.0` alpha，列出已知限制與不相容變更政策；verified with `CHANGELOG.md` release-scope draft.
@@ -96,7 +96,7 @@
 ## Completion Checklist
 
 - [x] Go module 與主要 package 已建立，並由 `go test ./...` 驗證通過。
-- [ ] `curl-impersonate` native dependency 的安裝與 linking 方式已記錄於 `docs/build.md`，並由乾淨環境建置紀錄或 CI job 驗證。
+- [x] `curl-impersonate` native dependency 的安裝與 linking 方式已記錄於 `docs/build.md`，並由乾淨環境建置紀錄或 CI job 驗證。
 - [x] High-level Go API 可完成 GET/POST、headers、body、cookies、proxy、timeout、redirect 與 HTTP/2 基本情境，並由 tests 驗證。
 - [x] 至少 Chrome 與 Firefox impersonation profile 可用，profile 名稱與 alias 已對照 `.refs/curl-impersonate/browsers.json` / `curl_cffi`，並由 `integration native` local-server tests 驗證。
 - [x] README 包含安裝、快速開始、範例、限制與 troubleshooting，並由 `examples/basic` 可執行證明；default execution stops with the documented native-unavailable message, and Chrome native execution returned `200 OK` from the ATP endpoint.

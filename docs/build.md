@@ -127,6 +127,19 @@ sh ./scripts/check-native.sh
 This validates both backend libraries, then runs the Go cgo backend once with
 the Chrome library/profile and once with the Firefox library/profile.
 
+The same native gate was also verified from a clean environment that only kept
+the required tool/runtime paths and native metadata:
+
+```sh
+env -i \
+  PATH=/home/narumi/.local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/narumi/.local/bin \
+  HOME=/home/narumi \
+  PKG_CONFIG_PATH=/tmp/curl-impersonate-local/lib/pkgconfig \
+  LD_LIBRARY_PATH=/tmp/curl-impersonate-local/lib \
+  GOCACHE=/tmp/go-build \
+  sh ./scripts/check-native.sh
+```
+
 Fingerprint verification uses the same native build inputs plus Python/PyYAML
 and `nghttpd`:
 
@@ -142,10 +155,10 @@ GOCACHE=/tmp/go-build \
 /usr/bin/python3 scripts/check-fingerprint.py --profile firefox --skip-tls
 ```
 
-The Chrome command verifies both TLS ClientHello and HTTP/2 header ordering
-against upstream fixtures. The Firefox command currently verifies HTTP/2 only;
-Firefox TLS still has a local `psk_key_exchange_modes` fixture mismatch tracked
-in `docs/fingerprint-verification.md`.
+The Chrome and Firefox commands verify TLS ClientHello and HTTP/2 header
+ordering against upstream fixtures. TLS capture intentionally keeps TLS
+verification enabled and allows the later request failure; Firefox/NSS changes
+ClientHello shape when verification is disabled.
 
 ## CI Plan
 

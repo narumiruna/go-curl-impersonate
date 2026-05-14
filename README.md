@@ -28,8 +28,8 @@ The first release target is Linux amd64 with cgo and a native
   unavailable error unless built with `-tags="integration native"` and cgo
   flags for curl-impersonate.
 - The native backend has local Chrome/Firefox request tests. Chrome TLS and
-  HTTP/2 fingerprints match upstream fixtures; Firefox HTTP/2 matches, while
-  Firefox TLS still has a tracked fixture mismatch.
+  HTTP/2 fingerprints match upstream fixtures; Firefox TLS and HTTP/2
+  fingerprints match upstream fixtures.
 
 ## Packages
 
