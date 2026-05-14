@@ -116,34 +116,40 @@ hook 來 build 或安裝 native libraries。因此 submodule 是 contributor/CI 
   `PKG_CONFIG_PATH`，並維持目前 artifact/header/symbol/native Go tests 的檢查；
   verified with clean `env -i ... sh ./scripts/check-native.sh` against an
   unpacked Linux amd64 native bundle.
-- [ ] 新增 `.github/workflows/native.yml`，在 `workflow_dispatch`、tag push，或
+- [x] 新增 `.github/workflows/native.yml`，在 `workflow_dispatch`、tag push，或
   `main` path changes 時 checkout submodules、install apt deps、build native
   artifacts、run `scripts/check-native.sh`、run Chrome/Firefox
-  `scripts/check-fingerprint.py`; verify with a successful GitHub Actions run URL
-  or `gh run view` evidence.
-- [ ] 保持 `.github/workflows/test.yml` 為 no-native fast path，plain checkout 不需要
+  `scripts/check-fingerprint.py`; verified by GitHub Actions native run
+  `25879316560`, including Chrome/Firefox fingerprints, external module smoke,
+  runtime loader prototype, bundle packaging, and artifact upload.
+- [x] 保持 `.github/workflows/test.yml` 為 no-native fast path，plain checkout 不需要
   submodule；verify with `go test ./...`, `go test -tags=integration ./...`,
-  `go test -race ./...`, and successful default workflow on GitHub.
+  `go test -race ./...`, and successful default workflow on GitHub; verified by
+  GitHub Actions test run `25879316576`.
 - [x] 寫一份 consumer distribution decision record 到 `docs/native-distribution.md`，
   比較 release bundle、platform-specific Go artifact module、runtime loader /
   embedded bundle、system pkg-config 四種方案；verified with a Phase 1 release
   bundle recommendation, explicit submodule caveat, and follow-up criteria for
   `curl_cffi`-like zero-setup usage.
-- [ ] 新增 release workflow 或 release job，從 native prefix 打包
+- [x] 新增 release workflow 或 release job，從 native prefix 打包
   `go-curl-impersonate-native-linux-amd64.tar.gz`，內容至少包含 `lib/`,
   `include/`, `lib/pkgconfig/`, `VERSION`, `SHA256SUMS`，可選 `bin/`
   diagnostic CLI；verify by unpacking the artifact in a clean temp dir and running
-  `PKG_CONFIG_PATH=<unpack>/lib/pkgconfig LD_LIBRARY_PATH=<unpack>/lib sh ./scripts/check-native.sh`.
+  `PKG_CONFIG_PATH=<unpack>/lib/pkgconfig LD_LIBRARY_PATH=<unpack>/lib sh ./scripts/check-native.sh`;
+  implemented as the native workflow artifact upload and verified by downloading
+  run `25879316560`, checking `SHA256SUMS`, unpacking it, and running
+  `scripts/check-native.sh`.
 - [x] 補 `docs/quickstart.md` 或 README quickstart，明確分成 library path 與 CLI
   path：library path 使用 `go get`, import `client`, download native bundle,
   set env, run with `-tags="integration native"`；CLI path 使用 release binary or
   `go install` with native deps；verified by executing the external consumer
   smoke script from a temporary module against an unpacked bundle.
-- [ ] 新增外部 consumer smoke script，例如 `scripts/smoke-external-module.sh`，
+- [x] 新增外部 consumer smoke script，例如 `scripts/smoke-external-module.sh`，
   建一個 temp Go module、`go get github.com/narumiruna/go-curl-impersonate`,
   寫入最小 `client.NewClient` example，使用 release/native prefix 送出 local
-  httptest 或 ATP smoke request；verify with the script passing locally and in
-  native GitHub Actions.
+  httptest 或 ATP smoke request；verified locally against the downloaded GitHub
+  artifact with `201 Created consumer smoke ok`, and in GitHub Actions native run
+  `25879316560`.
 - [x] Prototype one `curl_cffi`-like consumer path beyond manual env setup:
   runtime loader experiment; verified by `scripts/prototype-runtime-loader.sh`
   creating a temporary external module, unsetting `CGO_CFLAGS`,
@@ -184,17 +190,19 @@ hook 來 build 或安裝 native libraries。因此 submodule 是 contributor/CI 
 
 ## Completion Checklist
 
-- [ ] A fresh GitHub Actions native run builds Chrome/Firefox native artifacts
+- [x] A fresh GitHub Actions native run builds Chrome/Firefox native artifacts
   from pinned upstream source and passes `scripts/check-native.sh`, verified by
-  workflow URL or `gh run view` output.
-- [ ] Chrome and Firefox TLS/HTTP2 fingerprints pass in GitHub Actions with
+  GitHub Actions native run `25879316560`.
+- [x] Chrome and Firefox TLS/HTTP2 fingerprints pass in GitHub Actions with
   `scripts/check-fingerprint.py --profile chrome` and `--profile firefox`,
-  verified by workflow logs.
-- [ ] Default CI passes without native artifacts or initialized submodules,
-  verified by successful `.github/workflows/test.yml` run.
-- [ ] A release artifact for Linux amd64 can be unpacked into a clean directory
+  verified by GitHub Actions native run `25879316560`.
+- [x] Default CI passes without native artifacts or initialized submodules,
+  verified by successful `.github/workflows/test.yml` run `25879316576`.
+- [x] A release artifact for Linux amd64 can be unpacked into a clean directory
   and used by `PKG_CONFIG_PATH` / `LD_LIBRARY_PATH` to build and run a sample
-  external Go module, verified by `scripts/smoke-external-module.sh`.
+  external Go module, verified by downloading the `25879316560` artifact,
+  checking `SHA256SUMS`, running `scripts/check-native.sh`,
+  `scripts/smoke-external-module.sh`, and `scripts/prototype-runtime-loader.sh`.
 - [x] README or quickstart docs show the library user path with `go get`, import
   example, native bundle setup, build tags, and a successful command output.
 - [x] `third_party/curl-impersonate` source handling is intentional and reproducible
