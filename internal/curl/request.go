@@ -117,7 +117,7 @@ func (s RequestSpec) OptionSteps() []OptionStep {
 	if len(s.Body) > 0 {
 		steps = append(steps,
 			OptionStep{Name: "CURLOPT_POSTFIELDSIZE_LARGE", Value: int64(len(s.Body))},
-			OptionStep{Name: "CURLOPT_READFUNCTION", Value: "BodyReader"},
+			OptionStep{Name: "CURLOPT_COPYPOSTFIELDS", Value: "buffered request body"},
 		)
 	}
 	return steps

@@ -121,7 +121,9 @@ libraries against local Go integration tests. The public ATP smoke then returned
 200 OK
 ```
 
-## Release Requirement
+## Release Gate
 
-Before `v0.1.0`, the remaining release blocker is to run this verifier in a
-clean native environment or CI job rather than only in this local workspace.
+The native and release workflows run the Chrome and Firefox fingerprint
+verifier in GitHub Actions after building the pinned curl-impersonate source.
+Before publishing a release, confirm the tag-triggered release workflow passed
+both verifier steps and uploaded the Linux amd64 native bundle plus checksum.

@@ -4,6 +4,13 @@
 
 When websites block automated requests by inspecting TLS handshakes or HTTP/2 settings, `go-curl-impersonate` lets your Go code appear as Chrome or Firefox at the network level — without reimplementing fingerprints yourself.
 
+This repository is in pre-v0.1.0 release polish. The checked-in Go module
+contains the public packages, profile resolution, client option model, native
+cgo backend, local integration tests, fingerprint verification scripts, and
+GitHub Actions workflows for default, native, version bump, and release checks.
+A v0.1.0 release has not been cut yet; the release workflow publishes the Linux
+amd64 native bundle on SemVer tag pushes.
+
 ## ✨ Features
 
 - 🌐 **Browser-accurate fingerprints** — Chrome and Firefox TLS/HTTP/2 profiles verified against upstream fixtures
@@ -99,7 +106,9 @@ func main() {
 
 > **Note:** `client.NativeAvailable()` returns `false` unless the binary was
 > built with `-tags="integration native"` and the runtime library is in
-> `LD_LIBRARY_PATH`. See the [Installation](#-installation) section above.
+> `LD_LIBRARY_PATH`. Real network requests also require a compatible native
+> bundle or system installation. See the [Installation](#-installation) section
+> above.
 
 ## 📚 API Overview
 
@@ -180,23 +189,23 @@ uploads the bundle plus checksum to the GitHub Release.
 ## ⚡ Concurrency
 
 `client.Client` is safe to share across goroutines after construction — its
-configuration is immutable. The native backend does not share a single libcurl
-easy handle across concurrent requests; a future handle pool will lease one
+configuration is immutable. The current native backend allocates one libcurl
+easy handle per request. If a future handle pool is added, it must lease one
 easy handle per request for the full perform/reset/cleanup cycle.
 
 ## 🗺️ Current Status
 
-> This module is in early implementation. The public API is stable enough for
-> integration work; full release readiness is tracked in
-> `docs/plans/2026-05-15_github-actions-library-distribution-plan.md`.
+> This module is in pre-v0.1.0 release polish. The release workflow publishes
+> the Linux amd64 native bundle on SemVer tag pushes, but v0.1.0 has not been
+> cut yet.
 
 - ✅ Go module at `github.com/narumiruna/go-curl-impersonate`
 - ✅ Browser alias resolution (`chrome`, `firefox` → native targets)
 - ✅ High-level client with profile, cookies, timeout, proxy, redirect, TLS, HTTP/2 options
 - ✅ Chrome and Firefox TLS/HTTP/2 fingerprints verified against upstream fixtures
 - ✅ Linux amd64 native bundle packaging wired into CI
-- 🔲 Default build returns a "native backend unavailable" error without `-tags="integration native"`
-- 🔲 `third_party/curl-impersonate` is a contributor/CI submodule — not a consumer install path
+- ✅ Default build returns a "native backend unavailable" error without `-tags="integration native"`
+- ✅ `third_party/curl-impersonate` is a contributor/CI submodule — not a consumer install path
 
 ## 🔗 References
 
