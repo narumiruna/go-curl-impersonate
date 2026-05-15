@@ -21,32 +21,10 @@ amd64 native bundle on SemVer tag pushes.
 
 ## 📦 Installation
 
-### 1. Add the Go module
+### Add the Go module
 
 ```sh
 go get github.com/narumiruna/go-curl-impersonate@latest
-```
-
-### 2. Install the native runtime bundle (Linux amd64)
-
-The default build compiles without native libraries. To make real impersonated
-requests you need a compatible `curl-impersonate` runtime. Release builds
-publish a pre-built Linux amd64 bundle:
-
-```sh
-version=v0.1.0 # replace with the release tag you want
-curl -LO "https://github.com/narumiruna/go-curl-impersonate/releases/download/${version}/go-curl-impersonate-native-linux-amd64.tar.gz"
-tar -xzf go-curl-impersonate-native-linux-amd64.tar.gz
-export GO_CURL_IMPERSONATE_NATIVE="$PWD/go-curl-impersonate-native-linux-amd64"
-export PKG_CONFIG_PATH="$GO_CURL_IMPERSONATE_NATIVE/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-export LD_LIBRARY_PATH="$GO_CURL_IMPERSONATE_NATIVE/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-```
-
-### 3. Build with native tags
-
-```sh
-go run -tags="integration native" ./examples/basic/main.go
-go install -tags="integration native" github.com/narumiruna/go-curl-impersonate/cmd/go-curl-impersonate@latest
 ```
 
 ### Diagnostic CLI
@@ -54,6 +32,36 @@ go install -tags="integration native" github.com/narumiruna/go-curl-impersonate/
 ```sh
 go install github.com/narumiruna/go-curl-impersonate/cmd/go-curl-impersonate@latest
 go-curl-impersonate   # prints supported profiles and native backend availability
+```
+
+The default build compiles without native libraries. It is useful for API work,
+tests, and diagnostics, but real impersonated requests require the native setup
+below.
+
+## Native Runtime Setup
+
+This section is required only when you want to make real impersonated requests.
+
+### Install the native runtime bundle (Linux amd64)
+
+The default build compiles without native libraries. To make real impersonated
+requests you need a compatible `curl-impersonate` runtime. Release builds
+publish a pre-built Linux amd64 bundle on SemVer tag pushes:
+
+```sh
+version=v0.1.0 # replace with a published release tag
+curl -LO "https://github.com/narumiruna/go-curl-impersonate/releases/download/${version}/go-curl-impersonate-native-linux-amd64.tar.gz"
+tar -xzf go-curl-impersonate-native-linux-amd64.tar.gz
+export GO_CURL_IMPERSONATE_NATIVE="$PWD/go-curl-impersonate-native-linux-amd64"
+export PKG_CONFIG_PATH="$GO_CURL_IMPERSONATE_NATIVE/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export LD_LIBRARY_PATH="$GO_CURL_IMPERSONATE_NATIVE/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+```
+
+### Build with native tags
+
+```sh
+go run -tags="integration native" ./examples/basic/main.go
+go install -tags="integration native" github.com/narumiruna/go-curl-impersonate/cmd/go-curl-impersonate@latest
 ```
 
 ## 🚀 Quick Start
@@ -107,8 +115,7 @@ func main() {
 > **Note:** `client.NativeAvailable()` returns `false` unless the binary was
 > built with `-tags="integration native"` and the runtime library is in
 > `LD_LIBRARY_PATH`. Real network requests also require a compatible native
-> bundle or system installation. See the [Installation](#-installation) section
-> above.
+> bundle or system installation. See [Native Runtime Setup](#native-runtime-setup).
 
 ## 📚 API Overview
 
