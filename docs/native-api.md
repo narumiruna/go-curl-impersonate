@@ -28,13 +28,17 @@ family that is not installed or linked.
 
 ## Expected Linking Inputs
 
-The exact final strategy is still open, but the implementation must document
-one reproducible Linux amd64 path before native integration is considered done:
+The first release path is a Linux amd64 native bundle or compatible system
+installation that provides:
 
 - Headers exposing libcurl APIs and `curl_easy_impersonate`.
 - A linkable curl-impersonate library for the selected backend family.
-- Runtime loader configuration for the selected shared library.
-- The minimum curl-impersonate version or commit used for tests.
+- Pkg-config metadata for `libcurl-impersonate-chrome`,
+  `libcurl-impersonate-ff`, or the generic `libcurl-impersonate` fallback.
+- Runtime loader configuration through `LD_LIBRARY_PATH` or an equivalent
+  system loader path.
+- Version metadata in the release bundle's `VERSION` file, including the
+  `go-curl-impersonate` commit and upstream curl-impersonate commit.
 
 ## Option Ordering
 
@@ -50,13 +54,15 @@ one reproducible Linux amd64 path before native integration is considered done:
 
 ## Current Implementation State
 
-The default build does not link native libraries yet. `internal/curl` exposes
-the boundary and returns `curl.ErrNativeUnavailable` until an integration build
-tag and cgo implementation are added.
+The default build intentionally does not link native libraries. In that mode,
+and in `-tags=integration` builds without `native`, `internal/curl` returns
+`curl.ErrNativeUnavailable` after request validation. The
+`-tags="integration native"` build selects the cgo backend in
+`internal/curl/perform_native.go`.
 
 `internal/curl.NewRequestSpec` now snapshots validated Go requests into the
-method, URL, header, body, and option state that the cgo implementation should
-translate to `curl_easy_setopt` calls. `RequestSpec.HeaderLines` returns
+method, URL, header, body, and option state that the cgo backend translates to
+`curl_easy_setopt` calls. `RequestSpec.HeaderLines` returns
 deterministically ordered header lines for curl slists. `RequestSpec.OptionSteps`
 fixes the request-specific operation order:
 
@@ -64,30 +70,33 @@ fixes the request-specific operation order:
 2. `CURLOPT_CUSTOMREQUEST`
 3. `CURLOPT_HTTPHEADER` when headers are present
 4. `CURLOPT_POSTFIELDSIZE_LARGE` when a body is present
-5. `CURLOPT_READFUNCTION` when a body is present
+5. `CURLOPT_COPYPOSTFIELDS` when a buffered body is present
 
 `internal/curl.ParseHeaderBlock`, `internal/curl.ResponseCollector`, and
 `internal/curl.NewHTTPResponse` convert native callback state into standard
 `*http.Response` values. The collector ignores informational 1xx responses and
 keeps the latest final response when redirects produce multiple header blocks.
-The remaining work is to connect libcurl header/body callbacks to those helpers.
+The cgo backend connects libcurl header and write callbacks to those helpers
+through `goCurlHeaderCallback` and `goCurlWriteCallback`.
 
-`internal/curl.BodyReader` and `ReadBodyChunk` define the request-body read
-callback state machine, including partial reads, EOF, reset, and error status.
+The first native backend snapshots request bodies and sends them with
+`CURLOPT_COPYPOSTFIELDS`. `internal/curl.BodyReader` and `ReadBodyChunk` remain
+tested groundwork for a future streaming request-body callback path.
 
 `internal/curl.NewError` maps native `CURLcode` values into stable Go error
 kinds for DNS, connect, timeout, TLS, proxy, HTTP/2, impersonation, and unknown
-failures. The cgo implementation should wrap failed `curl_easy_perform` results
-with this converter.
+failures. The cgo implementation wraps failed `curl_easy_perform` results with
+this converter.
 
-`internal/curl.HandlePool` defines the easy-handle lease lifecycle used by the
-future native backend: each active request gets exclusive ownership of one
+The current cgo backend initializes and cleans up one easy handle per request.
+`internal/curl.HandlePool` defines a tested reusable lease lifecycle for a
+future pooled backend: each active request gets exclusive ownership of one
 handle lease, released handles may be reused, and closed pools reject new
 leases.
 
 `internal/curl.NewNativePlan` validates and normalizes profile, default header,
 timeout, proxy, redirect, TLS verification, and HTTP/2 settings before the cgo
-implementation maps them to curl options.
+backend maps them to curl options.
 
 `NativePlan.OptionSteps` fixes the expected operation order:
 
@@ -102,6 +111,6 @@ implementation maps them to curl options.
 9. `CURLOPT_HTTP_VERSION` when HTTP/2 is requested
 
 `internal/curl.NewOperationPlan` combines native profile/options and
-request-specific options into one ordered operation list. The cgo backend should
-apply the native plan first, then URL, method, headers, and body callback
+request-specific options into one ordered operation list. The cgo backend
+applies the native plan first, then URL, method, headers, and buffered body
 settings.

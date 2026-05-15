@@ -8,45 +8,40 @@ This document defines the first release API surface for `go-curl-impersonate`.
 | --- | --- | --- |
 | Client construction | Implemented | `client.NewClient` |
 | Browser profile aliases | Implemented | `impersonate.Resolve`, `client.WithProfileName`, `third_party/curl-impersonate/browsers.json` parity test |
-| GET/POST method passing | Request translation implemented, native pending | `internal/curl.NewRequestSpec` snapshots method |
-| Request headers | Request translation implemented, native pending | `internal/curl.NewRequestSpec` snapshots headers; `RequestSpec.HeaderLines` emits deterministic curl slist lines |
-| Request body | Request translation implemented, native pending | `internal/curl.NewRequestSpec` snapshots body and restores `req.Body` |
-| Request option plan | Implemented, cgo pending | `RequestSpec.OptionSteps` fixes URL, method, header, and body callback operation order |
-| Request body callback state | Implemented, cgo pending | `internal/curl.BodyReader`, `internal/curl.ReadBodyChunk` |
-| Response status/headers/body | Response construction implemented, native callback pending | `internal/curl.ParseHeaderBlock`, `internal/curl.ResponseCollector`, `internal/curl.NewHTTPResponse` |
-| Cookies | Request-side and response-side jar hooks implemented, native callback pending | `client.WithCookieJar`, `client.WithDefaultCookieJar` |
-| Timeout | Option implemented, native pending | `client.WithTimeout` |
-| Proxy | Option implemented, native pending | `client.WithProxy` |
-| Redirects | Option implemented, native pending | `client.WithRedirects`, `client.WithMaxRedirects`, `CURLOPT_MAXREDIRS` native step |
-| TLS verification | Option implemented, native pending | `client.WithTLSVerify` |
-| HTTP/2 intent | Option implemented, native pending | `client.WithHTTP2` |
-| Native option plan | Implemented, cgo pending | `internal/curl.NewNativePlan` validates options and `NativePlan.OptionSteps` fixes option order |
-| Full operation plan | Implemented, cgo pending | `internal/curl.NewOperationPlan` combines native and request option order |
+| GET/POST method passing | Implemented in the native backend | `internal/curl.NewRequestSpec`, `client/native_integration_test.go` |
+| Request headers | Implemented in the native backend | `RequestSpec.HeaderLines`, `CURLOPT_HTTPHEADER`, local native GET integration test |
+| Buffered request body | Implemented in the native backend | `internal/curl.NewRequestSpec` snapshots body and restores `req.Body`; `CURLOPT_COPYPOSTFIELDS` sends buffered POST bodies |
+| Request option plan | Implemented | `RequestSpec.OptionSteps` fixes URL, method, header, and buffered body option order |
+| Response status/headers/body | Implemented in native callbacks | `goCurlHeaderCallback`, `goCurlWriteCallback`, `internal/curl.ResponseCollector`, `internal/curl.NewHTTPResponse` |
+| Cookies | Implemented through `http.CookieJar` hooks | `client.WithCookieJar`, `client.WithDefaultCookieJar`, local native GET/POST cookie integration test |
+| Timeout | Implemented in the native backend | `client.WithTimeout`, `CURLOPT_TIMEOUT_MS`, native timeout test |
+| Proxy | Implemented in the native backend | `client.WithProxy`, `CURLOPT_PROXY`, native proxy test |
+| Redirects | Implemented in the native backend | `client.WithRedirects`, `client.WithMaxRedirects`, `CURLOPT_FOLLOWLOCATION`, `CURLOPT_MAXREDIRS`, native redirect test |
+| TLS verification | Implemented in the native backend | `client.WithTLSVerify`, `CURLOPT_SSL_VERIFYPEER`, `CURLOPT_SSL_VERIFYHOST`, native HTTP/2 TLS test |
+| HTTP/2 intent | Implemented in the native backend | `client.WithHTTP2`, `CURLOPT_HTTP_VERSION`, native HTTP/2 test, fingerprint verifier |
+| Native option plan | Implemented | `internal/curl.NewNativePlan` validates options and `NativePlan.OptionSteps` fixes option order |
+| Full operation plan | Implemented | `internal/curl.NewOperationPlan` combines native and request option order |
 | Request validation | Implemented before native execution | `client.Do` returns validation errors before native-unavailable errors |
-| Error conversion | Implemented, cgo pending | `internal/curl.NewError`, `internal/curl.ErrorKind` |
-| Handle lease lifecycle | Implemented, cgo pending | `internal/curl.HandlePool`, race-tested lease/release |
-| Backend metadata probe | Implemented, native artifacts pending | `internal/curl.ProbeBackendPkgConfig` checks Chrome and Firefox backend metadata separately |
+| Error conversion | Implemented in the native backend | `internal/curl.NewError`, `internal/curl.ErrorKind`, `curl_easy_perform` error wrapping |
+| Easy handle lifecycle | Implemented per request | `internal/curl/perform_native.go` calls `curl_easy_init` and `curl_easy_cleanup` per request |
+| Backend metadata probe | Implemented | `internal/curl.ProbeBackendPkgConfig` checks Chrome and Firefox backend metadata separately |
+| Native bundle distribution | Implemented for Linux amd64 | `.github/workflows/release.yml`, `scripts/package-native-bundle.sh`, `docs/native-distribution.md` |
 | Concurrency contract | Documented | README and `internal/curl/doc.go` define immutable client config and per-request easy handle ownership |
 
-## Native Integration Pending
+## First Release Limits
 
-The following items require `internal/curl` to translate Go request state to
-libcurl options:
-
-- Easy handle lifecycle.
-- Header and body callbacks.
-- Native wiring for error code conversion.
-- Native callback wiring for response status/header/body bytes.
-- Native callback wiring for response cookie jar updates.
-- Proxy configuration.
-- Timeout configuration.
-- Redirect policy.
-- TLS verification switch.
-- HTTP version and HTTP/2 settings.
-- Browser impersonation through `curl_easy_impersonate`.
-
-The native backend must allocate or lease one easy handle per active request.
-It must not use one easy handle concurrently.
+- Native requests require cgo, `-tags="integration native"`, and a compatible
+  Linux amd64 curl-impersonate bundle or system installation.
+- Default builds and `-tags=integration` builds intentionally keep the
+  dependency-light no-native placeholder.
+- Request bodies are buffered and sent with `CURLOPT_COPYPOSTFIELDS`. Streaming
+  request-body read callbacks are not part of the first release backend.
+- The reusable `internal/curl.HandlePool` and `internal/curl.BodyReader`
+  helpers are tested groundwork, but the first cgo backend uses one fresh easy
+  handle and one buffered request body per request.
+- Publishing v0.1.0 is an operational release step: create a SemVer tag through
+  the version-bump workflow or by pushing an annotated tag, then verify the
+  release workflow publishes the Linux amd64 bundle and checksum.
 
 ## Deferred
 
@@ -55,7 +50,8 @@ It must not use one easy handle concurrently.
 - WebSocket support.
 - QUIC/HTTP/3.
 - Pure Go fallback.
-- Prebuilt binary distribution.
+- Zero-setup native artifact modules or runtime-loader integration.
+- macOS, Windows, and non-amd64 native bundles.
 
 ## Profile Scope
 

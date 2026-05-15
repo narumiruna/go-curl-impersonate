@@ -106,7 +106,7 @@ func TestRequestSpecOptionSteps(t *testing.T) {
 		"CURLOPT_CUSTOMREQUEST",
 		"CURLOPT_HTTPHEADER",
 		"CURLOPT_POSTFIELDSIZE_LARGE",
-		"CURLOPT_READFUNCTION",
+		"CURLOPT_COPYPOSTFIELDS",
 	}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("option step names = %v, want %v", names, want)
