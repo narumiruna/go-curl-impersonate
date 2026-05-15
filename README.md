@@ -45,6 +45,45 @@ The first release target is Linux amd64 with cgo and a native
 - `cmd/go-curl-impersonate`: diagnostic CLI for supported profiles and native
   backend availability.
 
+## Installation
+
+Use the Go module from a project that wants to send requests through the
+library:
+
+```sh
+go get github.com/narumiruna/go-curl-impersonate@latest
+```
+
+The diagnostic CLI can be installed with:
+
+```sh
+go install github.com/narumiruna/go-curl-impersonate/cmd/go-curl-impersonate@latest
+go-curl-impersonate
+```
+
+The default build is dependency-light and reports that the native backend is not
+available. To make real impersonated requests, install or unpack a compatible
+`curl-impersonate` native runtime first. After a release exists, release builds
+publish a Linux amd64 bundle named
+`go-curl-impersonate-native-linux-amd64.tar.gz`.
+
+```sh
+version=v0.1.0 # replace with the release tag you want
+curl -LO "https://github.com/narumiruna/go-curl-impersonate/releases/download/${version}/go-curl-impersonate-native-linux-amd64.tar.gz"
+tar -xzf go-curl-impersonate-native-linux-amd64.tar.gz
+export GO_CURL_IMPERSONATE_NATIVE="$PWD/go-curl-impersonate-native-linux-amd64"
+export PKG_CONFIG_PATH="$GO_CURL_IMPERSONATE_NATIVE/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export LD_LIBRARY_PATH="$GO_CURL_IMPERSONATE_NATIVE/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+```
+
+Then build or run code that uses the native backend with cgo and the current
+native tags:
+
+```sh
+go run -tags="integration native" ./examples/basic/main.go
+go install -tags="integration native" github.com/narumiruna/go-curl-impersonate/cmd/go-curl-impersonate@latest
+```
+
 ## Example
 
 ```go
@@ -139,6 +178,18 @@ Native dependency and integration-test details are tracked in:
 If curl-impersonate is installed under a local prefix without pkg-config
 metadata, `scripts/write-pkg-config.sh` can generate the `.pc` files needed by
 `scripts/check-native.sh`.
+
+## Release
+
+The `Bump Version` workflow creates an annotated `vMAJOR.MINOR.PATCH` tag from
+the latest SemVer tag. Because tags pushed with the default `GITHUB_TOKEN` do
+not trigger follow-up workflows, the repository must define `secrets.PAT_TOKEN`
+with permission to push tags.
+
+The `Release` workflow runs on `v*.*.*` tag pushes. It runs the Go checks,
+builds curl-impersonate, verifies the native backend and fingerprints, checks
+that an external module can consume the released tag, packages the Linux amd64
+native bundle, and uploads the bundle plus checksum to the GitHub Release.
 
 ## Concurrency
 

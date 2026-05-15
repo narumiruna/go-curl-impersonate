@@ -1,0 +1,83 @@
+name: Bump Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump-type:
+        description: "Bump type"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bump-version
+  cancel-in-progress: false
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PAT token
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_NAME" != "main" ]; then
+            echo "::error::Run Bump Version from main, got: $GITHUB_REF_NAME"
+            exit 1
+          fi
+          if [ -z "$PAT_TOKEN" ]; then
+            echo "::error::Configure secrets.PAT_TOKEN so the pushed tag can trigger the Release workflow."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Calculate next version
+        id: version
+        env:
+          BUMP_TYPE: ${{ inputs.bump-type }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          new_tag=$(sh ./scripts/next-version.sh "$BUMP_TYPE")
+          if git rev-parse -q --verify "refs/tags/$new_tag" >/dev/null; then
+            echo "::error::Tag already exists: $new_tag"
+            exit 1
+          fi
+          echo "tag=$new_tag" >> "$GITHUB_OUTPUT"
+          echo "Next version: $new_tag"
+
+      - name: Create and push tag
+        env:
+          NEW_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$NEW_TAG" -m "$NEW_TAG"
+          git push origin "refs/tags/$NEW_TAG"
+
+      - name: Write summary
+        env:
+          NEW_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          {
+            echo "## Bumped version"
+            echo
+            echo "Created and pushed tag \`$NEW_TAG\`."
+            echo "The tag push should trigger the Release workflow."
+          } >> "$GITHUB_STEP_SUMMARY"
