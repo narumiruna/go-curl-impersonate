@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -14,69 +15,247 @@ import (
 	"github.com/narumiruna/go-curl-impersonate/internal/curl"
 )
 
-func main() {
-	requestURL := flag.String("url", "", "send one request to this URL after printing diagnostics")
-	profileName := flag.String("profile", "chrome", "impersonation profile for -url")
-	tlsVerify := flag.Bool("tls-verify", true, "verify TLS certificates for -url")
-	allowRequestError := flag.Bool("allow-request-error", false, "return success when the diagnostic request fails")
-	flag.Parse()
+const (
+	chromeBackend  = "curl-impersonate-chrome"
+	firefoxBackend = "curl-impersonate-ff"
+)
 
-	fmt.Printf("native backend available: %v\n", client.NativeAvailable())
-	fmt.Printf("supported targets: %s\n", strings.Join(impersonate.SupportedTargets(), ", "))
-	probe, err := curl.ProbePkgConfig(context.Background())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "pkg-config probe: %v\n", err)
-	} else {
-		fmt.Printf("pkg-config package: %s\n", probe.Package)
-		fmt.Printf("pkg-config cflags: %s\n", probe.CFlags)
-		fmt.Printf("pkg-config libs: %s\n", probe.Libs)
+type dependencies struct {
+	nativeAvailable  func() bool
+	supportedTargets func() []string
+	probePkgConfig   func(context.Context) (curl.PkgConfigProbe, error)
+	detectLinkConfig func(context.Context, string) (curl.LinkConfig, error)
+	sendRequest      func(context.Context, string, string, bool) (requestResult, error)
+}
+
+type options struct {
+	requestURL      string
+	profileName     string
+	tlsVerify       bool
+	allowRequestErr bool
+	verbose         bool
+}
+
+type requestResult struct {
+	Status string
+	Proto  string
+}
+
+func main() {
+	deps := dependencies{
+		nativeAvailable:  client.NativeAvailable,
+		supportedTargets: impersonate.SupportedTargets,
+		probePkgConfig:   curl.ProbePkgConfig,
+		detectLinkConfig: curl.DetectLinkConfig,
+		sendRequest:      sendDiagnosticRequest,
 	}
-	for _, backend := range []string{"curl-impersonate-chrome", "curl-impersonate-ff"} {
-		probe, err := curl.ProbeBackendPkgConfig(context.Background(), backend)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s pkg-config probe: %v\n", backend, err)
-		} else {
-			fmt.Printf("%s pkg-config package: %s\n", backend, probe.Package)
+	os.Exit(run(context.Background(), os.Args[1:], os.Stdout, os.Stderr, deps))
+}
+
+func run(ctx context.Context, args []string, stdout, stderr io.Writer, deps dependencies) int {
+	opts, exitCode, ok := parseOptions(args, stderr)
+	if !ok {
+		return exitCode
+	}
+
+	renderDiagnostics(ctx, stdout, deps, opts.verbose)
+	if opts.requestURL == "" {
+		return 0
+	}
+
+	fmt.Fprintln(stdout, "\nRequest")
+	writeField(stdout, "Profile", opts.profileName)
+	writeField(stdout, "TLS verification", enabledLabel(opts.tlsVerify))
+
+	result, err := deps.sendRequest(ctx, opts.requestURL, opts.profileName, opts.tlsVerify)
+	if err != nil {
+		fmt.Fprintf(stderr, "request failed: %v\n", err)
+		if !opts.allowRequestErr {
+			return 1
 		}
-		config, err := curl.DetectLinkConfig(context.Background(), backend)
+		return 0
+	}
+	writeField(stdout, "Status", result.Status)
+	writeField(stdout, "Protocol", result.Proto)
+	return 0
+}
+
+func parseOptions(args []string, stderr io.Writer) (options, int, bool) {
+	var opts options
+	flags := flag.NewFlagSet("go-curl-impersonate", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.StringVar(&opts.requestURL, "url", "", "send a GET request after running diagnostics")
+	flags.StringVar(&opts.profileName, "profile", "chrome", "impersonation profile for -url")
+	flags.BoolVar(&opts.tlsVerify, "tls-verify", true, "verify TLS certificates for -url")
+	flags.BoolVar(&opts.allowRequestErr, "allow-request-error", false, "exit successfully when the diagnostic request fails")
+	flags.BoolVar(&opts.verbose, "verbose", false, "show compiler, linker, and probe error details")
+	flags.Usage = func() {
+		fmt.Fprintln(stderr, "Usage:")
+		fmt.Fprintln(stderr, "  go-curl-impersonate [options]")
+		fmt.Fprintln(stderr, "\nInspect browser profiles and native curl-impersonate configuration.")
+		fmt.Fprintln(stderr, "\nOptions:")
+		flags.PrintDefaults()
+		fmt.Fprintln(stderr, "\nExamples:")
+		fmt.Fprintln(stderr, "  go-curl-impersonate")
+		fmt.Fprintln(stderr, "  go-curl-impersonate -verbose")
+		fmt.Fprintln(stderr, "  go-curl-impersonate -profile firefox -url https://example.com")
+	}
+
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return options{}, 0, false
+		}
+		return options{}, 2, false
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected argument %q; use -url to send a request\n\n", flags.Arg(0))
+		flags.Usage()
+		return options{}, 2, false
+	}
+	return opts, 0, true
+}
+
+func renderDiagnostics(ctx context.Context, stdout io.Writer, deps dependencies, verbose bool) {
+	fmt.Fprintln(stdout, "go-curl-impersonate diagnostics")
+
+	fmt.Fprintln(stdout, "\nBuild")
+	if deps.nativeAvailable() {
+		writeField(stdout, "Native requests", "available")
+	} else {
+		writeField(stdout, "Native requests", "unavailable")
+		writeField(stdout, "Next step", "Build with -tags=\"integration native\"; see the Native Runtime Setup in README.md.")
+	}
+
+	fmt.Fprintln(stdout, "\nProfiles")
+	defaultChrome, err := impersonate.Resolve("chrome")
+	if err == nil {
+		writeField(stdout, "Default alias", "chrome -> "+defaultChrome.Target)
+	}
+	profiles := groupProfilesByBackend(deps.supportedTargets())
+	writeField(stdout, "Chrome backend", valueOrNone(strings.Join(profiles[chromeBackend], ", ")))
+	writeField(stdout, "Firefox backend", valueOrNone(strings.Join(profiles[firefoxBackend], ", ")))
+	if len(profiles[""]) != 0 {
+		writeField(stdout, "Other", strings.Join(profiles[""], ", "))
+	}
+
+	fmt.Fprintln(stdout, "\nNative build configuration")
+	probe, probeErr := deps.probePkgConfig(ctx)
+	if probeErr != nil {
+		writeField(stdout, "pkg-config metadata", "unavailable")
+		if verbose {
+			writeField(stdout, "Metadata reason", probeErr.Error())
+		}
+	} else {
+		writeField(stdout, "pkg-config metadata", "available ("+probe.Package+")")
+		if verbose {
+			writeField(stdout, "C flags", valueOrNone(probe.CFlags))
+			writeField(stdout, "Libraries", valueOrNone(probe.Libs))
+		}
+	}
+
+	backends := []struct {
+		label string
+		name  string
+	}{
+		{label: "Chrome backend", name: chromeBackend},
+		{label: "Firefox backend", name: firefoxBackend},
+	}
+	missingLinkConfig := false
+	for _, backend := range backends {
+		config, err := deps.detectLinkConfig(ctx, backend.name)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s link config: %v\n", backend, err)
+			missingLinkConfig = true
+			writeField(stdout, backend.label, "unavailable")
+			if verbose {
+				writeField(stdout, backend.label+" reason", err.Error())
+			}
 			continue
 		}
-		fmt.Printf("%s link source: %s\n", backend, config.Source)
-	}
-	if !client.NativeAvailable() {
-		fmt.Fprintln(os.Stderr, "requests require a build with curl-impersonate integration enabled")
-	}
-	if *requestURL != "" {
-		if err := sendDiagnosticRequest(*requestURL, *profileName, *tlsVerify); err != nil {
-			fmt.Fprintf(os.Stderr, "request failed: %v\n", err)
-			if !*allowRequestError {
-				os.Exit(1)
-			}
+		writeField(stdout, backend.label, linkConfigSummary(config))
+		if verbose {
+			writeLinkConfigDetails(stdout, backend.label, config)
 		}
+	}
+	if missingLinkConfig {
+		writeField(stdout, "Next step", "For local builds, set PKG_CONFIG_PATH or both CGO_CFLAGS and CGO_LDFLAGS; see docs/build.md.")
 	}
 }
 
-func sendDiagnosticRequest(requestURL string, profileName string, tlsVerify bool) error {
+func groupProfilesByBackend(targets []string) map[string][]string {
+	profiles := map[string][]string{
+		chromeBackend:  {},
+		firefoxBackend: {},
+		"":             {},
+	}
+	for _, target := range targets {
+		profile, err := impersonate.Resolve(target)
+		if err != nil {
+			profiles[""] = append(profiles[""], target)
+			continue
+		}
+		backend, err := profile.Backend()
+		if err != nil || (backend != chromeBackend && backend != firefoxBackend) {
+			profiles[""] = append(profiles[""], target)
+			continue
+		}
+		profiles[backend] = append(profiles[backend], target)
+	}
+	return profiles
+}
+
+func linkConfigSummary(config curl.LinkConfig) string {
+	summary := "available via " + valueOrNone(config.Source)
+	if config.Package != "" {
+		summary += " (" + config.Package + ")"
+	}
+	return summary
+}
+
+func writeLinkConfigDetails(w io.Writer, label string, config curl.LinkConfig) {
+	prefix := strings.TrimSuffix(label, " backend")
+	writeField(w, prefix+" C flags", valueOrNone(config.CFlags))
+	writeField(w, prefix+" linker flags", valueOrNone(config.LDFlags))
+}
+
+func writeField(w io.Writer, label, value string) {
+	lines := strings.Split(value, "\n")
+	fmt.Fprintf(w, "  %-22s %s\n", label, lines[0])
+	for _, line := range lines[1:] {
+		fmt.Fprintf(w, "  %-22s %s\n", "", line)
+	}
+}
+
+func enabledLabel(enabled bool) string {
+	if enabled {
+		return "enabled"
+	}
+	return "disabled"
+}
+
+func valueOrNone(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "(none)"
+	}
+	return value
+}
+
+func sendDiagnosticRequest(ctx context.Context, requestURL, profileName string, tlsVerify bool) (requestResult, error) {
 	c, err := client.NewClient(
 		client.WithProfileName(profileName),
 		client.WithTLSVerify(tlsVerify),
 	)
 	if err != nil {
-		return err
+		return requestResult{}, err
 	}
-	req, err := http.NewRequest(http.MethodGet, requestURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
-		return err
+		return requestResult{}, err
 	}
 	resp, err := c.Do(req)
 	if err != nil {
-		return err
+		return requestResult{}, err
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
-	fmt.Printf("request status: %s\n", resp.Status)
-	fmt.Printf("request proto: %s\n", resp.Proto)
-	return nil
+	return requestResult{Status: resp.Status, Proto: resp.Proto}, nil
 }
