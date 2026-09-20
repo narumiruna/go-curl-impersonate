@@ -1,4 +1,4 @@
-//go:build integration && native
+//go:build integration && native && cgo
 
 package client
 
@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -237,6 +238,52 @@ func TestNativeClientRedirectProxyTimeoutAndHTTP2(t *testing.T) {
 			t.Fatalf("response proto = %s, want HTTP/2", resp.Proto)
 		}
 	})
+}
+
+func TestNativeClientConcurrentRequests(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	c, err := NewClient(WithProfileName(nativeTestProfile()))
+	if err != nil {
+		t.Fatalf("NewClient returned error: %v", err)
+	}
+
+	const requestCount = 16
+	var wg sync.WaitGroup
+	for range requestCount {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req, err := http.NewRequest(http.MethodGet, server.URL, nil)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			resp, err := c.Do(req)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("status = %d, want 200", resp.StatusCode)
+				return
+			}
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if string(body) != "ok" {
+				t.Errorf("body = %q, want ok", body)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func nativeTestProfile() string {

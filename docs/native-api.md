@@ -54,23 +54,30 @@ installation that provides:
 
 ## Current Implementation State
 
-The default build intentionally does not link native libraries. In that mode,
-and in `-tags=integration` builds without `native`, `internal/curl` returns
-`curl.ErrNativeUnavailable` after request validation. The
+Builds that do not enable both `integration` and `native`, or that disable
+cgo, return `curl.ErrNativeUnavailable` after request validation. The
 `-tags="integration native"` build selects the cgo backend in
 `internal/curl/perform_native.go`.
 
-`internal/curl.NewRequestSpec` now snapshots validated Go requests into the
-method, URL, header, body, and option state that the cgo backend translates to
-`curl_easy_setopt` calls. `RequestSpec.HeaderLines` returns
-deterministically ordered header lines for curl slists. `RequestSpec.OptionSteps`
-fixes the request-specific operation order:
+`internal/curl.NewRequestSpec` validates options and snapshots Go requests into
+the method, URL, header, body, and option state translated by the cgo backend.
+`RequestSpec.HeaderLines` returns deterministically ordered header lines for curl
+slists. `perform_native.go` is the authoritative option order:
 
-1. `CURLOPT_URL`
-2. `CURLOPT_CUSTOMREQUEST`
-3. `CURLOPT_HTTPHEADER` when headers are present
-4. `CURLOPT_POSTFIELDSIZE_LARGE` when a body is present
-5. `CURLOPT_COPYPOSTFIELDS` when a buffered body is present
+1. `curl_easy_impersonate`
+2. `CURLOPT_NOSIGNAL`
+3. `CURLOPT_TIMEOUT_MS` when a timeout is set
+4. `CURLOPT_PROXY` when a proxy is set
+5. `CURLOPT_FOLLOWLOCATION`
+6. `CURLOPT_MAXREDIRS` when redirects are enabled and a limit is set
+7. `CURLOPT_SSL_VERIFYPEER`
+8. `CURLOPT_SSL_VERIFYHOST`
+9. `CURLOPT_HTTP_VERSION` when HTTP/2 is requested
+10. `CURLOPT_URL`
+11. `CURLOPT_CUSTOMREQUEST`
+12. `CURLOPT_HTTPHEADER` when headers are present
+13. `CURLOPT_POSTFIELDSIZE_LARGE` and `CURLOPT_COPYPOSTFIELDS` when a buffered
+    body is present
 
 `internal/curl.ParseHeaderBlock`, `internal/curl.ResponseCollector`, and
 `internal/curl.NewHTTPResponse` convert native callback state into standard
@@ -79,38 +86,12 @@ keeps the latest final response when redirects produce multiple header blocks.
 The cgo backend connects libcurl header and write callbacks to those helpers
 through `goCurlHeaderCallback` and `goCurlWriteCallback`.
 
-The first native backend snapshots request bodies and sends them with
-`CURLOPT_COPYPOSTFIELDS`. `internal/curl.BodyReader` and `ReadBodyChunk` remain
-tested groundwork for a future streaming request-body callback path.
+The backend snapshots request bodies and sends them with
+`CURLOPT_COPYPOSTFIELDS`. Streaming request-body callbacks are not implemented.
+It initializes and cleans up one easy handle per request, so concurrent requests
+do not share an easy handle.
 
 `internal/curl.NewError` maps native `CURLcode` values into stable Go error
 kinds for DNS, connect, timeout, TLS, proxy, HTTP/2, impersonation, and unknown
 failures. The cgo implementation wraps failed `curl_easy_perform` results with
 this converter.
-
-The current cgo backend initializes and cleans up one easy handle per request.
-`internal/curl.HandlePool` defines a tested reusable lease lifecycle for a
-future pooled backend: each active request gets exclusive ownership of one
-handle lease, released handles may be reused, and closed pools reject new
-leases.
-
-`internal/curl.NewNativePlan` validates and normalizes profile, default header,
-timeout, proxy, redirect, TLS verification, and HTTP/2 settings before the cgo
-backend maps them to curl options.
-
-`NativePlan.OptionSteps` fixes the expected operation order:
-
-1. `curl_easy_impersonate.target`
-2. `curl_easy_impersonate.default_headers`
-3. `CURLOPT_TIMEOUT_MS` when a timeout is set
-4. `CURLOPT_PROXY` when a proxy is set
-5. `CURLOPT_FOLLOWLOCATION`
-6. `CURLOPT_MAXREDIRS` when redirects are enabled and a limit is set
-7. `CURLOPT_SSL_VERIFYPEER`
-8. `CURLOPT_SSL_VERIFYHOST`
-9. `CURLOPT_HTTP_VERSION` when HTTP/2 is requested
-
-`internal/curl.NewOperationPlan` combines native profile/options and
-request-specific options into one ordered operation list. The cgo backend
-applies the native plan first, then URL, method, headers, and buffered body
-settings.

@@ -111,7 +111,6 @@ var (
 type nativeTransfer struct {
 	collector    ResponseCollector
 	headerBuffer bytes.Buffer
-	writeErr     error
 	headerErr    error
 }
 
@@ -167,9 +166,6 @@ func perform(ctx context.Context, req *http.Request, options Options) (*http.Res
 	}
 
 	code := C.curl_easy_perform(easy)
-	if transfer.writeErr != nil {
-		return nil, transfer.writeErr
-	}
 	if transfer.headerErr != nil {
 		return nil, transfer.headerErr
 	}
@@ -196,14 +192,10 @@ func applyNativeOptions(easy unsafe.Pointer, options Options) (func(), error) {
 			cleanups[i]()
 		}
 	}
-	plan, err := NewNativePlan(options)
-	if err != nil {
-		return cleanup, err
-	}
-	target := C.CString(plan.ImpersonateTarget)
+	target := C.CString(options.ProfileTarget)
 	cleanups = append(cleanups, func() { C.free(unsafe.Pointer(target)) })
 	defaultHeaders := C.int(0)
-	if plan.DefaultHeaders {
+	if options.DefaultHeaders {
 		defaultHeaders = 1
 	}
 	if err := checkCode("curl_easy_impersonate", C.gci_impersonate(easy, target, defaultHeaders)); err != nil {
@@ -214,43 +206,44 @@ func applyNativeOptions(easy unsafe.Pointer, options Options) (func(), error) {
 		cleanup()
 		return func() {}, err
 	}
-	if plan.TimeoutMillis > 0 {
-		if err := checkCode("CURLOPT_TIMEOUT_MS", C.gci_set_timeout_ms(easy, C.long(plan.TimeoutMillis))); err != nil {
+	timeoutMillis := durationMillis(options.Timeout)
+	if timeoutMillis > 0 {
+		if err := checkCode("CURLOPT_TIMEOUT_MS", C.gci_set_timeout_ms(easy, C.long(timeoutMillis))); err != nil {
 			cleanup()
 			return func() {}, err
 		}
 	}
-	if plan.Proxy != "" {
-		proxy := C.CString(plan.Proxy)
+	if options.Proxy != "" {
+		proxy := C.CString(options.Proxy)
 		cleanups = append(cleanups, func() { C.free(unsafe.Pointer(proxy)) })
 		if err := checkCode("CURLOPT_PROXY", C.gci_set_proxy(easy, proxy)); err != nil {
 			cleanup()
 			return func() {}, err
 		}
 	}
-	if err := checkCode("CURLOPT_FOLLOWLOCATION", C.gci_set_followlocation(easy, boolLong(plan.FollowRedirect))); err != nil {
+	if err := checkCode("CURLOPT_FOLLOWLOCATION", C.gci_set_followlocation(easy, boolLong(options.FollowRedirect))); err != nil {
 		cleanup()
 		return func() {}, err
 	}
-	if plan.FollowRedirect && plan.MaxRedirects > 0 {
-		if err := checkCode("CURLOPT_MAXREDIRS", C.gci_set_maxredirs(easy, C.long(plan.MaxRedirects))); err != nil {
+	if options.FollowRedirect && options.MaxRedirects > 0 {
+		if err := checkCode("CURLOPT_MAXREDIRS", C.gci_set_maxredirs(easy, C.long(options.MaxRedirects))); err != nil {
 			cleanup()
 			return func() {}, err
 		}
 	}
-	if err := checkCode("CURLOPT_SSL_VERIFYPEER", C.gci_set_ssl_verifypeer(easy, boolLong(plan.TLSVerify))); err != nil {
+	if err := checkCode("CURLOPT_SSL_VERIFYPEER", C.gci_set_ssl_verifypeer(easy, boolLong(options.TLSVerify))); err != nil {
 		cleanup()
 		return func() {}, err
 	}
 	verifyHost := C.long(0)
-	if plan.TLSVerify {
+	if options.TLSVerify {
 		verifyHost = 2
 	}
 	if err := checkCode("CURLOPT_SSL_VERIFYHOST", C.gci_set_ssl_verifyhost(easy, verifyHost)); err != nil {
 		cleanup()
 		return func() {}, err
 	}
-	if plan.HTTP2 {
+	if options.HTTP2 {
 		if err := checkCode("CURLOPT_HTTP_VERSION", C.gci_set_http_version(easy, C.CURL_HTTP_VERSION_2_0)); err != nil {
 			cleanup()
 			return func() {}, err
@@ -369,9 +362,6 @@ func goCurlHeaderCallback(ptr *C.char, size C.size_t, nmemb C.size_t, userdata u
 		}
 		return total
 	}
-	if _, err := transfer.headerBuffer.Write(line); err != nil {
-		transfer.headerErr = err
-		return 0
-	}
+	transfer.headerBuffer.Write(line)
 	return total
 }
