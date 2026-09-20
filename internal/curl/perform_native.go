@@ -108,6 +108,18 @@ var (
 	curlGlobalErr  error
 )
 
+// nativeResources holds request-owned allocations until perform returns.
+// Register each allocation immediately; release in reverse order before the
+// easy handle, and after the callback handle, matching their defer order.
+type nativeResources []func()
+
+func (r *nativeResources) free() {
+	for i := len(*r) - 1; i >= 0; i-- {
+		(*r)[i]()
+	}
+	*r = nil
+}
+
 type nativeTransfer struct {
 	collector    ResponseCollector
 	headerBuffer bytes.Buffer
@@ -136,16 +148,14 @@ func perform(ctx context.Context, req *http.Request, options Options) (*http.Res
 	}
 	defer C.curl_easy_cleanup(easy)
 
-	nativeCleanup, err := applyNativeOptions(easy, spec.Options)
-	if err != nil {
+	var resources nativeResources
+	defer resources.free()
+	if err := applyNativeOptions(easy, spec.Options, &resources); err != nil {
 		return nil, err
 	}
-	defer nativeCleanup()
-	requestCleanup, err := applyRequestOptions(easy, spec)
-	if err != nil {
+	if err := applyRequestOptions(easy, spec, &resources); err != nil {
 		return nil, err
 	}
-	defer requestCleanup()
 
 	transfer := &nativeTransfer{}
 	transferHandle := cgo.NewHandle(transfer)
@@ -185,96 +195,73 @@ func initCurlGlobal() error {
 	return curlGlobalErr
 }
 
-func applyNativeOptions(easy unsafe.Pointer, options Options) (func(), error) {
-	var cleanups []func()
-	cleanup := func() {
-		for i := len(cleanups) - 1; i >= 0; i-- {
-			cleanups[i]()
-		}
-	}
+func applyNativeOptions(easy unsafe.Pointer, options Options, resources *nativeResources) error {
 	target := C.CString(options.ProfileTarget)
-	cleanups = append(cleanups, func() { C.free(unsafe.Pointer(target)) })
+	*resources = append(*resources, func() { C.free(unsafe.Pointer(target)) })
 	defaultHeaders := C.int(0)
 	if options.DefaultHeaders {
 		defaultHeaders = 1
 	}
 	if err := checkCode("curl_easy_impersonate", C.gci_impersonate(easy, target, defaultHeaders)); err != nil {
-		cleanup()
-		return func() {}, err
+		return err
 	}
 	if err := checkCode("CURLOPT_NOSIGNAL", C.gci_set_nosignal(easy, 1)); err != nil {
-		cleanup()
-		return func() {}, err
+		return err
 	}
 	timeoutMillis := durationMillis(options.Timeout)
 	if timeoutMillis > 0 {
 		if err := checkCode("CURLOPT_TIMEOUT_MS", C.gci_set_timeout_ms(easy, C.long(timeoutMillis))); err != nil {
-			cleanup()
-			return func() {}, err
+			return err
 		}
 	}
 	if options.Proxy != "" {
 		proxy := C.CString(options.Proxy)
-		cleanups = append(cleanups, func() { C.free(unsafe.Pointer(proxy)) })
+		*resources = append(*resources, func() { C.free(unsafe.Pointer(proxy)) })
 		if err := checkCode("CURLOPT_PROXY", C.gci_set_proxy(easy, proxy)); err != nil {
-			cleanup()
-			return func() {}, err
+			return err
 		}
 	}
 	if err := checkCode("CURLOPT_FOLLOWLOCATION", C.gci_set_followlocation(easy, boolLong(options.FollowRedirect))); err != nil {
-		cleanup()
-		return func() {}, err
+		return err
 	}
 	if options.FollowRedirect && options.MaxRedirects > 0 {
 		if err := checkCode("CURLOPT_MAXREDIRS", C.gci_set_maxredirs(easy, C.long(options.MaxRedirects))); err != nil {
-			cleanup()
-			return func() {}, err
+			return err
 		}
 	}
 	if err := checkCode("CURLOPT_SSL_VERIFYPEER", C.gci_set_ssl_verifypeer(easy, boolLong(options.TLSVerify))); err != nil {
-		cleanup()
-		return func() {}, err
+		return err
 	}
 	verifyHost := C.long(0)
 	if options.TLSVerify {
 		verifyHost = 2
 	}
 	if err := checkCode("CURLOPT_SSL_VERIFYHOST", C.gci_set_ssl_verifyhost(easy, verifyHost)); err != nil {
-		cleanup()
-		return func() {}, err
+		return err
 	}
 	if options.HTTP2 {
 		if err := checkCode("CURLOPT_HTTP_VERSION", C.gci_set_http_version(easy, C.CURL_HTTP_VERSION_2_0)); err != nil {
-			cleanup()
-			return func() {}, err
+			return err
 		}
 	}
-	return cleanup, nil
+	return nil
 }
 
-func applyRequestOptions(easy unsafe.Pointer, spec RequestSpec) (func(), error) {
-	var cleanups []func()
-	cleanup := func() {
-		for i := len(cleanups) - 1; i >= 0; i-- {
-			cleanups[i]()
-		}
-	}
+func applyRequestOptions(easy unsafe.Pointer, spec RequestSpec, resources *nativeResources) error {
 	url := C.CString(spec.URL)
-	cleanups = append(cleanups, func() { C.free(unsafe.Pointer(url)) })
+	*resources = append(*resources, func() { C.free(unsafe.Pointer(url)) })
 	if err := checkCode("CURLOPT_URL", C.gci_set_url(easy, url)); err != nil {
-		cleanup()
-		return func() {}, err
+		return err
 	}
 
 	method := C.CString(spec.Method)
-	cleanups = append(cleanups, func() { C.free(unsafe.Pointer(method)) })
+	*resources = append(*resources, func() { C.free(unsafe.Pointer(method)) })
 	if err := checkCode("CURLOPT_CUSTOMREQUEST", C.gci_set_customrequest(easy, method)); err != nil {
-		cleanup()
-		return func() {}, err
+		return err
 	}
 
 	var headerList *C.struct_curl_slist
-	cleanups = append(cleanups, func() {
+	*resources = append(*resources, func() {
 		if headerList != nil {
 			C.curl_slist_free_all(headerList)
 		}
@@ -284,31 +271,27 @@ func applyRequestOptions(easy unsafe.Pointer, spec RequestSpec) (func(), error) 
 		next := C.curl_slist_append(headerList, value)
 		C.free(unsafe.Pointer(value))
 		if next == nil {
-			cleanup()
-			return func() {}, fmt.Errorf("curl: curl_slist_append failed")
+			return fmt.Errorf("curl: curl_slist_append failed")
 		}
 		headerList = next
 	}
 	if headerList != nil {
 		if err := checkCode("CURLOPT_HTTPHEADER", C.gci_set_httpheader(easy, headerList)); err != nil {
-			cleanup()
-			return func() {}, err
+			return err
 		}
 	}
 
 	if len(spec.Body) > 0 {
 		body := C.CBytes(spec.Body)
-		cleanups = append(cleanups, func() { C.free(body) })
+		*resources = append(*resources, func() { C.free(body) })
 		if err := checkCode("CURLOPT_POSTFIELDSIZE_LARGE", C.gci_set_postfieldsize(easy, C.curl_off_t(len(spec.Body)))); err != nil {
-			cleanup()
-			return func() {}, err
+			return err
 		}
 		if err := checkCode("CURLOPT_COPYPOSTFIELDS", C.gci_set_copy_postfields(easy, body)); err != nil {
-			cleanup()
-			return func() {}, err
+			return err
 		}
 	}
-	return cleanup, nil
+	return nil
 }
 
 func boolLong(value bool) C.long {

@@ -1,7 +1,6 @@
 package client
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
@@ -66,12 +65,8 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	if req == nil {
 		return nil, fmt.Errorf("client: nil Request")
 	}
-	ctx := req.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	prepared := c.prepareRequest(req.WithContext(ctx))
-	resp, err := curl.Perform(ctx, prepared, curl.Options{
+	prepared := c.prepareRequest(req)
+	resp, err := curl.Perform(req.Context(), prepared, curl.Options{
 		ProfileTarget:  c.config.Profile.Target,
 		DefaultHeaders: c.config.Profile.DefaultHeaders,
 		Timeout:        c.config.Timeout,
@@ -90,7 +85,6 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 
 func (c *Client) prepareRequest(req *http.Request) *http.Request {
 	prepared := req.Clone(req.Context())
-	prepared.Body = req.Body
 	if c.config.Jar == nil || prepared.URL == nil {
 		return prepared
 	}

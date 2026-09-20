@@ -1,9 +1,6 @@
 package curl
 
-import (
-	"errors"
-	"fmt"
-)
+import "fmt"
 
 type ErrorKind string
 
@@ -88,8 +85,4 @@ func NewError(code int, message string) error {
 		kind = ErrorConnect
 	}
 	return &Error{Code: code, Kind: kind, Message: message}
-}
-
-func IsKind(err error, kind ErrorKind) bool {
-	return errors.Is(err, &Error{Kind: kind})
 }

@@ -3,9 +3,11 @@ package client
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,17 +81,86 @@ func TestPrepareRequestAddsCookiesFromJar(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewClient returned error: %v", err)
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, u.String(), nil)
+	type contextKey struct{}
+	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), contextKey{}, "request-value"))
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), strings.NewReader("payload"))
 	if err != nil {
 		t.Fatalf("NewRequestWithContext returned error: %v", err)
 	}
+	replayCalls := 0
+	req.GetBody = func() (io.ReadCloser, error) {
+		replayCalls++
+		return io.NopCloser(strings.NewReader("custom replay")), nil
+	}
 
 	prepared := c.prepareRequest(req)
+	if prepared == req || prepared.Body != req.Body {
+		t.Fatal("prepareRequest must clone the request but share its body")
+	}
+	if prepared.Context() != ctx || prepared.Context().Value(contextKey{}) != "request-value" {
+		t.Fatal("prepareRequest changed the request context")
+	}
+	cancel()
+	if !errors.Is(prepared.Context().Err(), context.Canceled) {
+		t.Fatal("prepared request did not retain context cancellation")
+	}
+	if prepared.GetBody == nil {
+		t.Fatal("prepareRequest removed GetBody")
+	}
+	replay, err := prepared.GetBody()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer replay.Close()
+	body, err := io.ReadAll(replay)
+	if err != nil || string(body) != "custom replay" || replayCalls != 1 {
+		t.Fatalf("GetBody = %q, %v; calls = %d", body, err, replayCalls)
+	}
 	if got := prepared.Header.Get("Cookie"); got != "session=abc" {
 		t.Fatalf("Cookie header = %q, want session=abc", got)
 	}
 	if req.Header.Get("Cookie") != "" {
 		t.Fatalf("prepareRequest should not mutate original request headers")
+	}
+}
+
+func TestPrepareZeroValueRequest(t *testing.T) {
+	c, err := NewClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := &http.Request{}
+	prepared := c.prepareRequest(req)
+	if prepared == req || prepared.Context() == nil || prepared.Context() != req.Context() {
+		t.Fatal("prepareRequest must clone a zero-value request with its background context")
+	}
+	if prepared.URL != nil || prepared.Body != nil || prepared.GetBody != nil {
+		t.Fatal("prepareRequest changed zero-value request fields")
+	}
+}
+
+func TestDoRejectsNilInputs(t *testing.T) {
+	c, err := NewClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name    string
+		client  *Client
+		req     *http.Request
+		wantErr string
+	}{
+		{"nil client", nil, nil, "client: nil Client"},
+		{"nil request", c, nil, "client: nil Request"},
+		{"zero-value request", c, &http.Request{}, "curl: nil request URL"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			resp, err := test.client.Do(test.req)
+			if resp != nil || err == nil || err.Error() != test.wantErr {
+				t.Fatalf("Do = %v, %v; want nil, %q", resp, err, test.wantErr)
+			}
+		})
 	}
 }
 
