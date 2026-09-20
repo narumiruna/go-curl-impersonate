@@ -56,38 +56,15 @@ The package script writes
 `dist/go-curl-impersonate-native-linux-amd64.tar.gz` and a matching `.sha256`
 file. The tarball includes its own `SHA256SUMS` manifest.
 
-## Runtime Loader Prototype
-
-`scripts/prototype-runtime-loader.sh` is an experiment for a future
-`curl_cffi`-like path. It creates a temporary external Go module, `go get`s this
-module, unsets `CGO_CFLAGS`, `CGO_LDFLAGS`, and `LD_LIBRARY_PATH`, then uses
-`dlopen` to load `libcurl-impersonate-chrome.so` from the native bundle. The
-prototype resolves the Chrome profile through the public `impersonate` package
-and calls `curl_easy_impersonate` through symbols loaded at runtime.
-
-```sh
-sh ./scripts/prototype-runtime-loader.sh /tmp/curl-impersonate-local
-```
-
-Expected output:
-
-```text
-runtime loader prototype ok: chrome116
-```
-
-This is not the selected Phase 1 library path. The current `client` native
-backend still compiles against `curl/curl.h` and links through cgo flags. The
-prototype only proves that a runtime-loader design can locate the bundle and
-call the core native symbol without compile-time curl-impersonate cgo flags.
-
 ## Follow-Up Criteria
 
-Before replacing the Phase 1 bundle with a more `curl_cffi`-like path, prototype
-one of these outcomes:
+Runtime loading remains deferred and has no implementation or release gate in
+this repository. Before replacing the Phase 1 bundle with a more
+`curl_cffi`-like path, evaluate one of these outcomes in a dedicated change:
 
 - A platform artifact module can be fetched with `go get`, stays within an
   acceptable module size, and exposes stable cgo flags without polluting the
   main module.
-- A runtime loader can locate or extract the native libraries safely, works in a
-  temporary external module, and has a clear update story for upstream security
-  rebuilds.
+- A runtime loader can locate or extract the native libraries safely, supports
+  the complete callback and request lifecycle, and has a clear update story for
+  upstream security rebuilds.
