@@ -188,10 +188,11 @@ from the latest SemVer tag. The repository must define `secrets.PAT_TOKEN`
 with tag-push permission because tags pushed with the default `GITHUB_TOKEN`
 do not trigger follow-up workflows.
 
-The **Release** workflow runs on `v*.*.*` tag pushes. It runs Go checks,
-builds curl-impersonate, verifies native backend and fingerprints, validates
-external module consumption, packages the Linux amd64 native bundle, and
-uploads the bundle plus checksum to the GitHub Release.
+The **Release** workflow runs on `v*.*.*` tag pushes. It calls the shared native
+pipeline to run Go checks, build curl-impersonate, verify native behavior and
+fingerprints, validate tagged-module consumption, and package the Linux amd64
+native bundle. Only after that pipeline passes does it upload the bundle plus
+checksum to the GitHub Release.
 
 ## ⚡ Concurrency
 

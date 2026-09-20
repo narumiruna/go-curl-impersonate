@@ -1,0 +1,155 @@
+name: Native build
+
+on:
+  workflow_call:
+    inputs:
+      checkout-ref:
+        description: Git ref to build; defaults to the caller's ref
+        required: false
+        type: string
+        default: ""
+      module-version:
+        description: Released module version to use for the consumer smoke test
+        required: false
+        type: string
+        default: ""
+      run-default-checks:
+        description: Run the default Go and fixture checks before the native build
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  native-linux-amd64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.checkout-ref }}
+          submodules: true
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Run default checks
+        if: inputs.run-default-checks
+        run: |
+          set -euo pipefail
+          sh ./scripts/check-fingerprint-fixtures.sh
+          go test ./...
+          go test -race ./...
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            autoconf \
+            automake \
+            autotools-dev \
+            build-essential \
+            bzip2 \
+            ca-certificates \
+            cmake \
+            curl \
+            libnss3 \
+            libtool \
+            mercurial \
+            nghttp2-server \
+            ninja-build \
+            nss-plugin-pem \
+            pkg-config \
+            python3-pip \
+            python3-yaml \
+            unzip \
+            xz-utils \
+            zlib1g-dev
+
+      - name: Build curl-impersonate
+        run: sh ./scripts/build-curl-impersonate.sh "$RUNNER_TEMP/curl-impersonate-local"
+        env:
+          CURL_IMPERSONATE_BUILD_DIR: ${{ runner.temp }}/curl-impersonate-build
+
+      - name: Check native Go backend
+        run: sh ./scripts/check-native.sh "$RUNNER_TEMP/curl-impersonate-local"
+
+      - name: Check Chrome fingerprint
+        run: /usr/bin/python3 scripts/check-fingerprint.py --profile chrome
+        env:
+          PKG_CONFIG_PATH: ${{ runner.temp }}/curl-impersonate-local/lib/pkgconfig
+          LD_LIBRARY_PATH: ${{ runner.temp }}/curl-impersonate-local/lib
+
+      - name: Check Firefox fingerprint
+        run: /usr/bin/python3 scripts/check-fingerprint.py --profile firefox
+        env:
+          PKG_CONFIG_PATH: ${{ runner.temp }}/curl-impersonate-local/lib/pkgconfig
+          LD_LIBRARY_PATH: ${{ runner.temp }}/curl-impersonate-local/lib
+
+      - name: Smoke external module
+        env:
+          MODULE_VERSION: ${{ inputs.module-version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$MODULE_VERSION" ]; then
+            GO_CURL_IMPERSONATE_MODULE_VERSION="$MODULE_VERSION" \
+              GOPROXY=direct \
+              sh ./scripts/smoke-external-module.sh "$RUNNER_TEMP/curl-impersonate-local"
+          else
+            sh ./scripts/smoke-external-module.sh "$RUNNER_TEMP/curl-impersonate-local"
+          fi
+
+      - name: Package native bundle
+        run: sh ./scripts/package-native-bundle.sh "$RUNNER_TEMP/curl-impersonate-local" dist
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: go-curl-impersonate-native-linux-amd64
+          path: |
+            dist/go-curl-impersonate-native-linux-amd64.tar.gz
+            dist/go-curl-impersonate-native-linux-amd64.tar.gz.sha256
+          if-no-files-found: error
+
+  verify-bundle:
+    needs: native-linux-amd64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.checkout-ref }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/download-artifact@v6
+        with:
+          name: go-curl-impersonate-native-linux-amd64
+          path: dist
+
+      - name: Verify downloaded bundle
+        run: |
+          set -euo pipefail
+          name=go-curl-impersonate-native-linux-amd64
+          # The packaging checksum records the build job's absolute path.
+          expected=$(awk '{print $1}' "dist/$name.tar.gz.sha256")
+          printf '%s  %s\n' "$expected" "dist/$name.tar.gz" | sha256sum --check
+          tar -xzf "dist/$name.tar.gz" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/$name"
+          sha256sum --check SHA256SUMS
+          test -f VERSION
+          test -f include/curl/curl.h
+          test -f lib/pkgconfig/libcurl-impersonate-chrome.pc
+          test -f lib/pkgconfig/libcurl-impersonate-ff.pc
+
+      - name: Smoke unpacked bundle
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3 nss-plugin-pem pkg-config
+          sh ./scripts/smoke-external-module.sh "$RUNNER_TEMP/go-curl-impersonate-native-linux-amd64"

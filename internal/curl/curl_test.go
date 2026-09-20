@@ -1,4 +1,4 @@
-//go:build !native
+//go:build !integration || !native || !cgo
 
 package curl
 

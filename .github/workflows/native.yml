@@ -7,7 +7,10 @@ on:
       - main
     tags:
       - "v*"
+      # Strict SemVer tags are built once by the release workflow.
+      - "!v[0-9]+.[0-9]+.[0-9]+"
     paths:
+      - ".github/workflows/native-build.yml"
       - ".github/workflows/native.yml"
       - ".gitmodules"
       - "go.mod"
@@ -24,70 +27,9 @@ on:
       - "docs/native-distribution.md"
       - "docs/quickstart.md"
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+permissions:
+  contents: read
 
 jobs:
   native-linux-amd64:
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          submodules: true
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            autoconf \
-            automake \
-            autotools-dev \
-            build-essential \
-            bzip2 \
-            ca-certificates \
-            cmake \
-            curl \
-            libnss3 \
-            libtool \
-            mercurial \
-            nghttp2-server \
-            ninja-build \
-            nss-plugin-pem \
-            pkg-config \
-            python3-pip \
-            python3-yaml \
-            unzip \
-            xz-utils \
-            zlib1g-dev
-      - name: Build curl-impersonate
-        run: sh ./scripts/build-curl-impersonate.sh "$RUNNER_TEMP/curl-impersonate-local"
-        env:
-          CURL_IMPERSONATE_BUILD_DIR: ${{ runner.temp }}/curl-impersonate-build
-      - name: Check native Go backend
-        run: sh ./scripts/check-native.sh "$RUNNER_TEMP/curl-impersonate-local"
-      - name: Check Chrome fingerprint
-        run: /usr/bin/python3 scripts/check-fingerprint.py --profile chrome
-        env:
-          PKG_CONFIG_PATH: ${{ runner.temp }}/curl-impersonate-local/lib/pkgconfig
-          LD_LIBRARY_PATH: ${{ runner.temp }}/curl-impersonate-local/lib
-      - name: Check Firefox fingerprint
-        run: /usr/bin/python3 scripts/check-fingerprint.py --profile firefox
-        env:
-          PKG_CONFIG_PATH: ${{ runner.temp }}/curl-impersonate-local/lib/pkgconfig
-          LD_LIBRARY_PATH: ${{ runner.temp }}/curl-impersonate-local/lib
-      - name: Smoke external module
-        run: sh ./scripts/smoke-external-module.sh "$RUNNER_TEMP/curl-impersonate-local"
-      - name: Prototype runtime loader
-        run: sh ./scripts/prototype-runtime-loader.sh "$RUNNER_TEMP/curl-impersonate-local"
-      - name: Package native bundle
-        run: sh ./scripts/package-native-bundle.sh "$RUNNER_TEMP/curl-impersonate-local" dist
-      - uses: actions/upload-artifact@v6
-        with:
-          name: go-curl-impersonate-native-linux-amd64
-          path: |
-            dist/go-curl-impersonate-native-linux-amd64.tar.gz
-            dist/go-curl-impersonate-native-linux-amd64.tar.gz.sha256
-          if-no-files-found: error
+    uses: ./.github/workflows/native-build.yml

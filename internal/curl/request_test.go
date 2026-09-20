@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 )
 
@@ -87,35 +88,6 @@ func TestHeaderLinesAreDeterministic(t *testing.T) {
 	}
 }
 
-func TestRequestSpecOptionSteps(t *testing.T) {
-	spec := RequestSpec{
-		Method: http.MethodPost,
-		URL:    "https://example.com/post",
-		Header: http.Header{
-			"X-Test": []string{"one"},
-		},
-		Body: []byte("payload"),
-	}
-	steps := spec.OptionSteps()
-	names := make([]string, 0, len(steps))
-	for _, step := range steps {
-		names = append(names, step.Name)
-	}
-	want := []string{
-		"CURLOPT_URL",
-		"CURLOPT_CUSTOMREQUEST",
-		"CURLOPT_HTTPHEADER",
-		"CURLOPT_POSTFIELDSIZE_LARGE",
-		"CURLOPT_COPYPOSTFIELDS",
-	}
-	if !reflect.DeepEqual(names, want) {
-		t.Fatalf("option step names = %v, want %v", names, want)
-	}
-	if steps[3].Value != int64(len("payload")) {
-		t.Fatalf("body size step = %+v", steps[3])
-	}
-}
-
 func TestNewRequestSpecValidatesInputs(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -124,6 +96,8 @@ func TestNewRequestSpecValidatesInputs(t *testing.T) {
 	}{
 		{name: "nil request", req: nil, options: Options{ProfileTarget: "chrome116"}},
 		{name: "missing profile", req: mustRequest(t, "https://example.com"), options: Options{}},
+		{name: "negative timeout", req: mustRequest(t, "https://example.com"), options: Options{ProfileTarget: "chrome116", Timeout: -time.Second}},
+		{name: "negative max redirects", req: mustRequest(t, "https://example.com"), options: Options{ProfileTarget: "chrome116", MaxRedirects: -1}},
 		{name: "unsupported scheme", req: mustRequest(t, "ftp://example.com/file"), options: Options{ProfileTarget: "chrome116"}},
 		{name: "empty host", req: mustRequest(t, "https:///path"), options: Options{ProfileTarget: "chrome116"}},
 		{name: "bad proxy", req: mustRequest(t, "https://example.com"), options: Options{ProfileTarget: "chrome116", Proxy: "://bad"}},
@@ -133,6 +107,56 @@ func TestNewRequestSpecValidatesInputs(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			if _, err := NewRequestSpec(test.req, test.options); err == nil {
 				t.Fatal("NewRequestSpec should return an error")
+			}
+		})
+	}
+}
+
+func TestNewRequestSpecValidationOrder(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		options Options
+		wantErr string
+	}{
+		{
+			name:    "URL before options",
+			url:     "ftp://example.com/file",
+			options: Options{Timeout: -time.Second, MaxRedirects: -1},
+			wantErr: `curl: unsupported URL scheme "ftp"`,
+		},
+		{
+			name:    "profile before timeout",
+			url:     "https://example.com",
+			options: Options{Timeout: -time.Second, MaxRedirects: -1},
+			wantErr: "curl: profile target is empty",
+		},
+		{
+			name:    "timeout before redirects",
+			url:     "https://example.com",
+			options: Options{ProfileTarget: "chrome116", Timeout: -time.Second, MaxRedirects: -1},
+			wantErr: "curl: timeout must not be negative",
+		},
+		{
+			name:    "redirects before proxy",
+			url:     "https://example.com",
+			options: Options{ProfileTarget: "chrome116", MaxRedirects: -1, Proxy: "://bad"},
+			wantErr: "curl: max redirects must not be negative",
+		},
+		{
+			name:    "body error after valid options",
+			url:     "https://example.com",
+			options: Options{ProfileTarget: "chrome116"},
+			wantErr: "curl: read request body: unexpected EOF",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := mustRequest(t, test.url)
+			req.Body = io.NopCloser(iotest.ErrReader(io.ErrUnexpectedEOF))
+			_, err := NewRequestSpec(req, test.options)
+			if err == nil || err.Error() != test.wantErr {
+				t.Fatalf("NewRequestSpec error = %v, want %q", err, test.wantErr)
 			}
 		})
 	}

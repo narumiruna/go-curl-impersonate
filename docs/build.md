@@ -80,7 +80,7 @@ If pkg-config metadata is not available, set both variables explicitly:
 ```sh
 CGO_CFLAGS="-I/path/to/curl-impersonate/include" \
 CGO_LDFLAGS="-L/path/to/curl-impersonate/lib -lcurl-impersonate" \
-go test -tags=integration ./...
+go test -tags="integration native" ./...
 ```
 
 Those paths must point to real headers and libraries; the Go toolchain passes
@@ -110,15 +110,13 @@ with Chrome and Firefox profiles when those backend packages are available.
 Native integration tests run separately from default unit tests:
 
 ```sh
-go test -tags=integration ./...
 go test -tags="integration native" ./...
 ```
 
-The current `integration` build tag alone is a compiling placeholder: it
-preserves the package boundary and still reports `curl.ErrNativeUnavailable`.
 The `integration native` tag combination selects the cgo backend in
 `internal/curl/perform_native.go` and requires `CGO_CFLAGS` / `CGO_LDFLAGS` to
-point at linkable curl-impersonate headers and libraries.
+point at linkable curl-impersonate headers and libraries. Every other tag/cgo
+combination uses the same no-native implementation.
 
 `scripts/check-native.sh` validates the selected native artifacts, then runs:
 
@@ -178,16 +176,27 @@ Default CI runs without native artifacts or initialized submodules:
 ```sh
 sh ./scripts/check-fingerprint-fixtures.sh
 go test ./...
-go test -tags=integration ./...
 go test -race ./...
 ```
 
-Native CI is defined in `.github/workflows/native.yml`. It checks out
-submodules, installs apt dependencies, builds the native prefix with
+The reusable native pipeline is defined in
+`.github/workflows/native-build.yml`. It checks out submodules, installs apt
+dependencies, builds the native prefix with
 `scripts/build-curl-impersonate.sh`, runs `scripts/check-native.sh`, verifies
 Chrome and Firefox TLS/HTTP2 fingerprints, runs the external module smoke test,
-runs the runtime-loader prototype, and uploads the Linux amd64 native bundle as
-a workflow artifact. Because the upstream native build is relatively heavy, the
-native workflow is limited to `workflow_dispatch`, tag pushes, and `main` path
-changes; pull requests keep using the default no-native workflow unless a native
-run is started manually.
+and uploads the Linux amd64 native bundle as a workflow artifact. A separate
+job downloads the artifact, verifies both checksums and required contents, and
+runs the external-module smoke test against the unpacked bundle.
+`.github/workflows/native.yml` calls it for manual runs, relevant `main`
+changes, and `v*` tags other than strict SemVer release tags. The release workflow
+calls the same pipeline once for SemVer tags, using the tagged module in the
+consumer smoke test before publication. Pull requests keep using the default
+no-native workflow unless a native run is started manually.
+
+| Event | Native pipeline caller |
+| --- | --- |
+| Manual native dispatch | `native.yml` |
+| Relevant `main` push | `native.yml` |
+| `vMAJOR.MINOR.PATCH` tag | `release.yml` only |
+| Other `v*` tag | `native.yml`; release rejects malformed release tags |
+| Pull request | Default checks only; native can be dispatched manually |

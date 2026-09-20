@@ -34,10 +34,7 @@ func NewRequestSpec(req *http.Request, options Options) (RequestSpec, error) {
 	if req.URL.Host == "" {
 		return RequestSpec{}, fmt.Errorf("curl: request URL host is empty")
 	}
-	if options.ProfileTarget == "" {
-		return RequestSpec{}, fmt.Errorf("curl: profile target is empty")
-	}
-	if _, err := NewNativePlan(options); err != nil {
+	if err := validateOptions(options); err != nil {
 		return RequestSpec{}, err
 	}
 	if options.Proxy != "" {
@@ -102,23 +99,4 @@ func (s RequestSpec) HeaderLines() []string {
 		}
 	}
 	return lines
-}
-
-// OptionSteps returns the ordered request-specific native operations.
-func (s RequestSpec) OptionSteps() []OptionStep {
-	steps := []OptionStep{
-		{Name: "CURLOPT_URL", Value: s.URL},
-		{Name: "CURLOPT_CUSTOMREQUEST", Value: s.Method},
-	}
-	headerLines := s.HeaderLines()
-	if len(headerLines) > 0 {
-		steps = append(steps, OptionStep{Name: "CURLOPT_HTTPHEADER", Value: headerLines})
-	}
-	if len(s.Body) > 0 {
-		steps = append(steps,
-			OptionStep{Name: "CURLOPT_POSTFIELDSIZE_LARGE", Value: int64(len(s.Body))},
-			OptionStep{Name: "CURLOPT_COPYPOSTFIELDS", Value: "buffered request body"},
-		)
-	}
-	return steps
 }

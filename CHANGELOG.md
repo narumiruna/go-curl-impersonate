@@ -12,9 +12,9 @@
   conversion.
 - Add local native integration tests and Chrome/Firefox TLS plus HTTP/2
   fingerprint verification against upstream fixtures.
-- Add native bundle packaging, external consumer smoke tests, runtime-loader
-  prototype, and GitHub Actions workflows for default checks, native checks,
-  version bumping, and release publishing.
+- Add native bundle packaging, external consumer smoke tests, and GitHub Actions
+  workflows for default checks, native checks, version bumping, and release
+  publishing.
 - Add docs for API scope, native API, build strategy, consumer quickstart,
   native distribution, and fingerprint verification.
 

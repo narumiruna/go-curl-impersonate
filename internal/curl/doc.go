@@ -5,8 +5,6 @@
 // be allocated, used, and released inside this package. Callers pass ordinary
 // Go request state through Options and receive ordinary Go responses.
 //
-// A Client may be shared by goroutines only after the native backend defines a
-// handle reuse strategy. Individual easy handles must not be used concurrently.
-// If a future handle pool is added, each request must lease one handle for the
-// full perform/reset/cleanup cycle.
+// Each native request owns a fresh easy handle for its full perform/cleanup
+// cycle. Individual easy handles must not be used concurrently.
 package curl
