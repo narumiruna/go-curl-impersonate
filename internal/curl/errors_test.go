@@ -2,6 +2,7 @@ package curl
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -31,12 +32,19 @@ func TestNewErrorZeroReturnsNil(t *testing.T) {
 	}
 }
 
-func TestIsKind(t *testing.T) {
+func TestErrorKindMatching(t *testing.T) {
 	err := NewError(codeOperationTimedOut, "timeout")
-	if !IsKind(err, ErrorTimeout) {
-		t.Fatalf("IsKind(%v, timeout) = false", err)
-	}
-	if IsKind(err, ErrorDNS) {
-		t.Fatalf("IsKind(%v, dns) = true", err)
+	for name, candidate := range map[string]error{
+		"direct":  err,
+		"wrapped": fmt.Errorf("perform: %w", err),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if !errors.Is(candidate, ErrTimeout) {
+				t.Fatalf("errors.Is(%v, ErrTimeout) = false", candidate)
+			}
+			if errors.Is(candidate, ErrDNS) {
+				t.Fatalf("errors.Is(%v, ErrDNS) = true", candidate)
+			}
+		})
 	}
 }

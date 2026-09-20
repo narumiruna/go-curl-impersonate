@@ -35,34 +35,33 @@ func BackendPkgConfigPackage(backend string) (string, error) {
 // ProbeBackendPkgConfig checks metadata for one curl-impersonate backend
 // family, falling back to the generic libcurl-impersonate package.
 func ProbeBackendPkgConfig(ctx context.Context, backend string) (PkgConfigProbe, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	backendPackage, err := BackendPkgConfigPackage(backend)
 	if err != nil {
 		return PkgConfigProbe{}, err
 	}
-	candidates := []string{backendPackage, "libcurl-impersonate"}
-	var messages []string
-	for _, candidate := range candidates {
-		cflags, libs, err := pkgConfig(ctx, candidate)
-		if err == nil {
-			return PkgConfigProbe{Package: candidate, CFlags: cflags, Libs: libs}, nil
-		}
-		messages = append(messages, fmt.Sprintf("%s: %v", candidate, err))
+	probe, err := probePkgConfigCandidates(ctx, backendPackage, "libcurl-impersonate")
+	if err != nil {
+		return PkgConfigProbe{}, fmt.Errorf("%w for %s: %v", ErrPkgConfigUnavailable, backend, err)
 	}
-	return PkgConfigProbe{}, fmt.Errorf("%w for %s: %s", ErrPkgConfigUnavailable, backend, strings.Join(messages, "; "))
+	return probe, nil
 }
 
 // ProbePkgConfig looks for a usable curl-impersonate pkg-config package.
 func ProbePkgConfig(ctx context.Context) (PkgConfigProbe, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	candidates := []string{
+	probe, err := probePkgConfigCandidates(ctx,
 		"libcurl-impersonate",
 		"libcurl-impersonate-chrome",
 		"libcurl-impersonate-ff",
+	)
+	if err != nil {
+		return PkgConfigProbe{}, fmt.Errorf("%w: %v", ErrPkgConfigUnavailable, err)
+	}
+	return probe, nil
+}
+
+func probePkgConfigCandidates(ctx context.Context, candidates ...string) (PkgConfigProbe, error) {
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	var messages []string
 	for _, candidate := range candidates {
@@ -72,7 +71,7 @@ func ProbePkgConfig(ctx context.Context) (PkgConfigProbe, error) {
 		}
 		messages = append(messages, fmt.Sprintf("%s: %v", candidate, err))
 	}
-	return PkgConfigProbe{}, fmt.Errorf("%w: %s", ErrPkgConfigUnavailable, strings.Join(messages, "; "))
+	return PkgConfigProbe{}, errors.New(strings.Join(messages, "; "))
 }
 
 func pkgConfig(ctx context.Context, pkg string) (string, string, error) {
